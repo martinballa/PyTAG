@@ -130,7 +130,7 @@ class PyTAG():
         return int(str(self._java_env.getPlayerResults()[self._playerID]) == "WIN_GAME")
 
 def get_card_id(card):
-    card_types = ["Maki-1", "Maki-2", "Maki-3", "Chopsticks", "Tempura", "Sashimi", "Dumpling", "SquidNigiri", "SalmonNigiri", "EggNigiri", "Wasabi", "Pudding"]
+    card_types = ["Maki", "Maki-2", "Maki-3", "Chopsticks", "Tempura", "Sashimi", "Dumpling", "SquidNigiri", "SalmonNigiri", "EggNigiri", "Wasabi", "Pudding"]
     card_emb = np.zeros(len(card_types))
     if card != "EmptyDeck":
         card_emb[card_types.index(card)] = 1

@@ -3,7 +3,7 @@ import json
 import os
 
 # Setup jpype
-tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
+tag_jar = os.path.join(os.path.dirname(__file__), '../jars', 'ModernBoardGame.jar')
 jpype.addClassPath(tag_jar)
 if not jpype.isJVMStarted():
     jpype.startJVM(convertStrings=False)
