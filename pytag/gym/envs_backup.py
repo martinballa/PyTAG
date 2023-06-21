@@ -2,8 +2,8 @@ import gymnasium as gym
 import numpy as np
 import jpype
 
-# from .core import PyTAG, GameType, Utils, get_agent_class, get_mcts_with_params
-import pytag.pyTAG
+from .core import PyTAG, GameType, Utils, get_agent_class, get_mcts_with_params
+
 from abc import abstractmethod
 from typing import Dict, List, Union
 
@@ -15,33 +15,33 @@ class TagSingleplayerGym(gym.Env):
         self._obstype = obs_type
         
         # Initialize the java environment
-        # gameType = GameType.valueOf(Utils.getArg([""], "game", game_id))
-        # # ToDo throw exception if player is incorrect
-        # if agent_ids[0] == "mcts":
-        #     agents = [get_mcts_with_params(f"~/data/pyTAG/MCTS_for_{game_id}.json")() for agent_id in agent_ids]
-        # else:
-        #     agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
-        self._env = pytag.pyTAG.PyTAG(agent_ids=agent_ids, game_id=game_id, seed=seed, isNormalized=True)
-        assert agent_ids.count("python") == 1, "Only one python agent is allowed - look at TAGMultiplayerGym for multiplayer support"
+        gameType = GameType.valueOf(Utils.getArg([""], "game", game_id))
+        # ToDo throw exception if player is incorrect
+        if agent_ids[0] == "mcts":
+            agents = [get_mcts_with_params(f"~/data/pyTAG/MCTS_for_{game_id}.json")() for agent_id in agent_ids]
+        else:
+            agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
         self._playerID = agent_ids.index("python")
-
-        # self._java_env = PyTAG(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
+        # ToDo accept the List interface in GymEnv, this allows us to pass agents directly instead of converting it first
+        self._java_env = PyTAG(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
         # print(f"initial seed = {self._java_env.getSeed()}")
 
         # Construct action/observation space
-        self._env.reset()
-        self.action_space = gym.spaces.Discrete(self._env.action_space)
-
-        obs_size = int(self._env.observation_space)
+        self._java_env.reset()
+        action_mask = self._java_env.getActionMask()
+        num_actions = len(action_mask)
+        self.action_space = gym.spaces.Discrete(num_actions)
+        # ToDo better low and high values
+        obs_size = int(self._java_env.getObservationSpace())
         self.observation_space = gym.spaces.Box(shape=(obs_size,), low=float("-inf"), high=float("inf"))
-        self._action_tree_shape = self._env.get_action_tree_shape()
+        self._action_tree_shape = 1
+        #self._action_tree_shape = np.array(self._java_env.getTreeShape())
 
     def get_action_tree_shape(self):
         return self._action_tree_shape
     
     def reset(self):
-        # todo allow reshuffling agents?
-        self._env.reset()
+        self._java_env.reset()
         self._update_data()
         
         return self._last_obs_vector, {"action_tree": self._action_tree_shape, "action_mask": self._last_action_mask, "has_won": int(str(self._java_env.getPlayerResults()[self._playerID]) == "WIN_GAME")}
@@ -52,10 +52,10 @@ class TagSingleplayerGym(gym.Env):
             # Execute a random action
             valid_actions = np.where(self._last_action_mask)[0]
             action = self.np_random.choice(valid_actions)
-            self._env.step(action)
+            self._java_env.step(action)
             reward = -1
         else:
-            self._env.step(action)
+            self._java_env.step(action)
             reward = int(str(self._java_env.getPlayerResults()[self._playerID]) == "WIN_GAME")
             if str(self._java_env.getPlayerResults()[self._playerID]) == "LOSE_GAME": reward = -1
 

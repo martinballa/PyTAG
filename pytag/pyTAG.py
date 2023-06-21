@@ -50,6 +50,7 @@ class PyTAG():
             agents = [get_mcts_with_params(f"~/data/pyTAG/MCTS_for_{game_id}.json")() for agent_id in agent_ids]
         else:
             agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
+            # todo should be playerIDs instead - we want ot support having multiple python players
         self._playerID = agent_ids.index("python") # if multiple python agents this is the first one
 
         self._java_env = PyTAGEnv(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
@@ -72,8 +73,7 @@ class PyTAG():
         self._update_data()
 
         return self._last_obs_vector, {"action_tree": self._action_tree_shape, "action_mask": self._last_action_mask,
-                                       "has_won": int(
-                                           str(self._java_env.getPlayerResults()[self._playerID]) == "WIN_GAME")}
+                                       "has_won": self.terminal_reward(self._playerID)}
 
     def step(self, action):
         # Verify
@@ -82,16 +82,17 @@ class PyTAG():
             valid_actions = np.where(self._last_action_mask)[0]
             action = self._rnd.choice(valid_actions)
             self._java_env.step(action)
-            reward = -1
+            # reward = -1
         else:
             self._java_env.step(action)
-            reward = int(str(self._java_env.getPlayerResults()[self._playerID]) == "WIN_GAME")
-            if str(self._java_env.getPlayerResults()[self._playerID]) == "LOSE_GAME": reward = -1
+            # reward = self.has_won(self._playerID)
+            reward = self.terminal_reward(self._playerID)
+            # if str(self._java_env.getPlayerResults()[self._playerID]) == "LOSE_GAME": reward = -1
 
         self._update_data()
         done = self._java_env.isDone()
         info = {"action_mask": self._last_action_mask,
-                "has_won": int(str(self._java_env.getPlayerResults()[self._playerID]) == "WIN_GAME")}
+                "has_won": self.terminal_reward(self._playerID)}
         return self._last_obs_vector, reward, done, info
 
     def close(self):
@@ -111,6 +112,9 @@ class PyTAG():
         action_mask = self._java_env.getActionMask()
         self._last_action_mask = np.array(action_mask, dtype=bool)
 
+    def get_action_mask(self):
+        return self._last_action_mask
+
     def getVectorObs(self):
         return self._java_env.getFeatures()
 
@@ -126,45 +130,18 @@ class PyTAG():
     def getPlayerID(self):
         return self._java_env.getPlayerID()
 
-    def has_won(self):
-        return int(str(self._java_env.getPlayerResults()[self._playerID]) == "WIN_GAME")
+    def has_won(self, player_id=0):
+        return int(str(self._java_env.getPlayerResults()[player_id]) == "WIN_GAME")
 
-def get_card_id(card):
-    card_types = ["Maki", "Maki-2", "Maki-3", "Chopsticks", "Tempura", "Sashimi", "Dumpling", "SquidNigiri", "SalmonNigiri", "EggNigiri", "Wasabi", "Pudding"]
-    card_emb = np.zeros(len(card_types))
-    if card != "EmptyDeck":
-        card_emb[card_types.index(card)] = 1
-    return card_emb
-def process_json_obs(json_obs, normalise=True):
-    # actions represent cardIds from left to right
-    # todo fix observation shape for N-players
-    json_ = json.loads(str(json_obs))
-    player_id = json_["PlayerID"]
-    played_cards = json_["playedCards"].split(",")
-    cards_in_hand = json_["cardsInHand"].split(",")
-    score = json_["playerScore"] / 50 # keep it close to 0-1
-    round = json_["rounds"] / 3 # max 3 rounds
-
-    opp_scores = []
-    opponent_played_cards_ = []
-    for key in json_.keys():
-        if f"opp" in key and "playedCards" in key:
-            opp_played_cards = json_[key].split(",")
-            opponent_played_cards_.append(([get_card_id(card) for card in opp_played_cards]))
-        if f"opp" in key and "score" in key:
-            opp_score = json_[key] / 50
-            opp_scores.append(opp_score)
-
-    played_cards_ = [get_card_id(card) for card in played_cards]
-    cards_in_hand_ = [get_card_id(card)  for card in cards_in_hand]
-
-    score = np.expand_dims(score, 0)
-    round = np.expand_dims(round, 0)
-    played_cards = np.stack(played_cards_).flatten()
-    cards_in_hand = np.stack(cards_in_hand_, 0).flatten()
-    opp_played_cards = np.stack(opponent_played_cards_, 1).flatten()
-    obs = np.concatenate([score, round, played_cards, cards_in_hand, opp_played_cards, opp_scores])
-    return obs
+    def terminal_reward(self, player_id=0):
+        # gets terminal reward - recommended to check if game is terminal as an unfinished game return the same value as a tie
+        player_result = str(self._java_env.getPlayerResults()[player_id])
+        if player_result == "WIN_GAME":
+            return 1.0
+        elif player_result == "LOSE_GAME":
+            return -1.0
+        else:
+            return 0.0
 
 
 if __name__ == "__main__":
@@ -185,8 +162,6 @@ if __name__ == "__main__":
             rnd_action = env.sample_rnd_action()
 
             obs, reward, done, info = env.step(rnd_action)
-            json_obs  = env.getJSONObs()
-            json_obs = process_json_obs(env.getJSONObs())
             if done:
                 print(f"Game over rewards {reward} in {steps} steps results =  {env.has_won()}")
                 if env.has_won():
