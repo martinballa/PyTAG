@@ -6,6 +6,15 @@ import jpype.imports
 
 import numpy as np
 from typing import List
+def list_supported_games(as_json=False):
+    tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
+    jpype.addClassPath(tag_jar)
+    if not jpype.isJVMStarted():
+        jpype.startJVM(convertStrings=False)
+    PyTAGEnv = jpype.JClass("core.PyTAG")
+    if as_json:
+        return json.loads(str(PyTAGEnv.getSupportedGamesJSON()))
+    return PyTAGEnv.getSupportedGames()
 
 def get_agent_class(agent_name):
     if agent_name == "random":
@@ -25,6 +34,8 @@ def get_mcts_with_params(json_path):
     json_string = str(json_string).replace('\'', '\"') # JAVA only uses " for string
     return jpype.JClass("players.mcts.MCTSPlayer")(PlayerFactory.fromJSONString(json_string))
 
+# create the game registry when PyTAG is loaded
+_game_registry = list_supported_games(as_json=True)
 class PyTAG():
     def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector",  jar_path="jars/ModernBoardGame.jar", isNormalized = True):
         self._last_obs_vector = None
@@ -32,6 +43,8 @@ class PyTAG():
         self._rnd = random.Random(seed)
         self._obs_type = obs_type
 
+        assert game_id in _game_registry, f"Game {game_id} not supported. Supported games are {_game_registry}"
+        assert _game_registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
         # start up the JVM
         tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
         jpype.addClassPath(tag_jar)
@@ -147,6 +160,7 @@ class PyTAG():
 if __name__ == "__main__":
     EPISODES = 100
     players = ["python", "python"]
+    supported_games = list_supported_games()
     env = PyTAG(players, game_id="SushiGo", obs_type="json")
     done = False
 
