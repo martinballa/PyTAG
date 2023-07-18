@@ -37,7 +37,11 @@ def get_mcts_with_params(json_path):
 # create the game registry when PyTAG is loaded
 _game_registry = list_supported_games(as_json=True)
 class PyTAG():
-    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector",  jar_path="jars/ModernBoardGame.jar", isNormalized = True):
+    """Core class to interact with the pyTAG environment. This class is a wrapper around the Java environment.
+    This class expects to have a single python agents
+    Note that the java jar package is expected to be in the jars folder of the same directory as this file.
+    """
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
         self._last_obs_vector = None
         self._last_action_mask = None
         self._rnd = random.Random(seed)
@@ -63,9 +67,7 @@ class PyTAG():
             agents = [get_mcts_with_params(f"~/data/pyTAG/MCTS_for_{game_id}.json")() for agent_id in agent_ids]
         else:
             agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
-            # todo should be playerIDs instead - we want ot support having multiple python players
         self._playerID = agent_ids.index("python") # if multiple python agents this is the first one
-
         self._java_env = PyTAGEnv(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
 
         # Construct action/observation space
@@ -156,32 +158,106 @@ class PyTAG():
         else:
             return 0.0
 
+    def terminal_rewards(self):
+        player_result = self._java_env.getPlayerResults()
+        results = [0.0] * len(player_result)
+        for i in range(len(player_result)):
+            result = str(player_result[i])
+            if result == "WIN_GAME":
+                results[i] = 1.0
+            elif result == "LOSE_GAME":
+                results[i] = -1.0
+            else:
+                results[i] = 0.0
+        return results
+
+class MultiAgentPyTAG(PyTAG):
+    """If there are more than one python agents, the observations are handled as dictionaries with the agent id as key.
+    """
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+        super().__init__(agent_ids, game_id, seed, obs_type)
+        self._playerIDs = []
+        # collect all the player ids that are python agents
+        for i, agent_id in enumerate(agent_ids):
+            if agent_id == "python": self._playerIDs.append(i)
+        self._last_obs_vector = {player_id: None for player_id in self._playerIDs}
+        self._last_action_mask = {player_id: None for player_id in self._playerIDs}
+
+    def _update_data(self):
+        if self._obs_type == "vector":
+            obs = self._java_env.getObservationVector()
+            self._last_obs_vector = np.array(obs, dtype=np.float32)
+        elif self._obs_type == "json":
+            obs = self._java_env.getObservationJson()
+            self._last_obs_vector = obs
+
+        self._playerID = self.getPlayerID()
+        action_mask = self._java_env.getActionMask()
+        self._last_action_mask = np.array(action_mask, dtype=bool)
+
+    def reset(self):
+        """Resets the environment and return the initial observations for the first python agent that needs to act."""
+        self._java_env.reset()
+        self._playerID = self.getPlayerID()
+        self._update_data()
+
+        return {self._playerID :self._last_obs_vector}, {self._playerID:{"action_tree": self._action_tree_shape, "action_mask": self._last_action_mask,
+                                       "has_won": self.terminal_reward(self._playerID)}}
+
+    def step(self, action):
+        """Executes the action for the current player and returns the observations for the next python agent that needs to act.
+        Returns: obs, reward, done, info - obs is a dictionary with the agent id as key and the observation as value.
+        reward returns the reward for all agents at the same time, done also covers all agents, info is also just for the acting player"""
+        # Verify
+        if not self.is_valid_action(action):
+            # Execute a random action
+            valid_actions = np.where(self._last_action_mask)[0]
+            action = self._rnd.choice(valid_actions)
+            self._java_env.step(action)
+        else:
+            self._java_env.step(action)
+
+        self._update_data()
+        # done is for all players
+        done = self._java_env.isDone()
+        info = {self._playerID: {"action_mask": self._last_action_mask,
+                "has_won": self.terminal_reward(self._playerID)}}
+        # rewards contains all the rewards for all players
+        rewards = {p_id: reward for (p_id, reward) in enumerate(self.terminal_rewards())}
+        return {self._playerID: self._last_obs_vector}, rewards, done, info
+
 
 if __name__ == "__main__":
+    # multi-agent example
     EPISODES = 100
     players = ["python", "python"]
     supported_games = list_supported_games()
-    env = PyTAG(players, game_id="SushiGo", obs_type="json")
+    env = MultiAgentPyTAG(players, game_id="SushiGo", obs_type="json")
     done = False
 
     start_time = time.time()
-    steps = 0
-    wins = 0
+    steps = [0] * len(players)
+    wins = [0] * len(players)
+    rewards = [0] * len(players)
     for e in range(EPISODES):
-        obs = env.reset()
+        obs, info = env.reset()
         done = False
         while not done:
-            steps += 1
+            player_id = env.getPlayerID()
+            steps[player_id] += 1
 
             rnd_action = env.sample_rnd_action()
-
             obs, reward, done, info = env.step(rnd_action)
-            if done:
-                print(f"Game over rewards {reward} in {steps} steps results =  {env.has_won()}")
-                if env.has_won():
-                    wins += 1
-                break
+            player_id = env.getPlayerID()
+            # rewards are returned for both players
+            for p_id in range(len(players)):
+                rewards[p_id] += reward[p_id] # reward might go to the next player
 
-    print(f"win rate = {wins/EPISODES} {EPISODES} episodes done in {time.time() - start_time} with total steps = {steps}")
+            if done:
+                for p_id in range(len(players)):
+                    if env.has_won(p_id):
+                        wins[p_id] += 1
+                print(f"Game over rewards {rewards} in {steps} steps results =  {wins}")
+                break
     env.close()
 

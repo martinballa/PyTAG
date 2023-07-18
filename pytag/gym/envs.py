@@ -15,18 +15,9 @@ class TagSingleplayerGym(gym.Env):
         self._obstype = obs_type
         
         # Initialize the java environment
-        # gameType = GameType.valueOf(Utils.getArg([""], "game", game_id))
-        # # ToDo throw exception if player is incorrect
-        # if agent_ids[0] == "mcts":
-        #     agents = [get_mcts_with_params(f"~/data/pyTAG/MCTS_for_{game_id}.json")() for agent_id in agent_ids]
-        # else:
-        #     agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
         self._env = pytag.pyTAG.PyTAG(agent_ids=agent_ids, game_id=game_id, seed=seed, isNormalized=True)
         assert agent_ids.count("python") == 1, "Only one python agent is allowed - look at TAGMultiplayerGym for multiplayer support"
         self._playerID = agent_ids.index("python")
-
-        # self._java_env = PyTAG(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
-        # print(f"initial seed = {self._java_env.getSeed()}")
 
         # Construct action/observation space
         self._env.reset()
@@ -40,7 +31,6 @@ class TagSingleplayerGym(gym.Env):
         return self._action_tree_shape
     
     def reset(self):
-        # todo allow reshuffling agents?
         self._env.reset()
         self._update_data()
         
@@ -73,6 +63,9 @@ class TagSingleplayerGym(gym.Env):
         return self._last_action_mask[action] 
     
     def _update_data(self):
+        """Updates the observation and action mask.
+        """
+
         if self._obstype == "vector":
             obs = self._java_env.getObservationVector()
             self._last_obs_vector = np.array(obs, dtype=np.float32)
