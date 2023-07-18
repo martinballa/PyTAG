@@ -63,7 +63,6 @@ class SushiGoWrapper(gym.ObservationWrapper):
 
     def process_json_obs(self, json_obs, normalise=True):
         # actions represent cardIds from left to right
-        # todo fix observation shape for N-players
         json_ = json.loads(str(json_obs))
         player_id = json_["PlayerID"]
         played_cards = json_["playedCards"].split(",")
@@ -90,7 +89,7 @@ class SushiGoWrapper(gym.ObservationWrapper):
         round = np.expand_dims(round, 0)
         played_cards = np.sum(played_cards_, axis=0)
         cards_in_hand = np.stack(cards_in_hand_, 0).flatten()
-        opp_played_cards = np.sum(opponent_played_cards_, axis=1).flatten() # todo check on this
+        opp_played_cards = np.sum(opponent_played_cards_, axis=1).flatten()
         obs = np.concatenate([score, round, played_cards, cards_in_hand, opp_played_cards, opp_scores])
         return obs
 

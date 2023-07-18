@@ -2,8 +2,7 @@ import gymnasium as gym
 import numpy as np
 import jpype
 
-# from .core import PyTAG, GameType, Utils, get_agent_class, get_mcts_with_params
-import pytag.pyTAG
+from pytag.pyTAG import PyTAG, MultiAgentPyTAG
 from abc import abstractmethod
 from typing import Dict, List, Union
 
@@ -15,7 +14,7 @@ class TagSingleplayerGym(gym.Env):
         self._obstype = obs_type
         
         # Initialize the java environment
-        self._env = pytag.pyTAG.PyTAG(agent_ids=agent_ids, game_id=game_id, seed=seed, isNormalized=True)
+        self._env = PyTAG(agent_ids=agent_ids, game_id=game_id, seed=seed, isNormalized=True)
         assert agent_ids.count("python") == 1, "Only one python agent is allowed - look at TAGMultiplayerGym for multiplayer support"
         self._playerID = agent_ids.index("python")
 
@@ -76,16 +75,21 @@ class TagSingleplayerGym(gym.Env):
         action_mask = self._java_env.getActionMask()
         self._last_action_mask = np.array(action_mask, dtype=bool)
     
+"""Multi-agent environment for TAG."""
 class TAGMultiplayerGym(gym.Env):
-    def __init__(self, game_id: str):
-        pass
-    
+    def __init__(self, game_id: str, agent_ids: List[str], seed: int=0, obs_type:str="vector"):
+        super().__init__()
+        self._java_env = MultiAgentPyTAG(game_id=game_id, agent_ids=agent_ids, seed=0, obs_type=obs_type)
+
     def reset(self):
-        pass
         # return {"player1": obs1, "player2": obs2}
+        obs, info = self._java_env.reset()
+        return obs, info
+
         
     def step(self, actions: Dict[str, int]):
-        pass
+        obs, reward, done, truncated, info = self._java_env.step(actions)
+        return obs, reward, done, truncated, info
         # return {"player1": obs1, "player2": obs2}
         
     def close(self):

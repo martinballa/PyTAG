@@ -24,6 +24,10 @@ def get_agent_class(agent_name):
         return jpype.JClass("players.python.PythonAgent")
     return None
 
+def get_available_agents():
+    return ["random", "mcts", "osla", "python"]
+
+"""Allows initializing a MCTSPlayer with a json file containing the parameters"""
 def get_mcts_with_params(json_path):
     with open(os.path.expanduser(json_path)) as json_file:
         json_string = json.load(json_file)
