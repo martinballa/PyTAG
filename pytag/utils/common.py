@@ -8,15 +8,16 @@ import jpype
 from jpype import *
 import jpype.imports
 from pytag.gym.wrappers import StrategoWrapper, SushiGoWrapper
+from pytag.pyTAG import list_supported_games
 
-def make_env(env_id, seed, opponent, n_players, framestack=1):
+def make_env(env_id, seed, opponent, n_players, framestack=1, obs_type="vector"):
     def thunk():
         # always have a python agent first (at least in our experiments)
         agent_ids = ["python"]
         for i in range(n_players - 1):
             agent_ids.append(opponent)
         # obs_type = "json" if "Sushi" in env_id else "vector" # , obs_type=obs_type
-        env = gym.make(env_id, seed=seed, agent_ids=agent_ids, obs_type="json")
+        env = gym.make(env_id, seed=seed, agent_ids=agent_ids, obs_type=obs_type)
         if "Stratego" in env_id:
             env = StrategoWrapper(env)
         if "Sushi" in env_id:

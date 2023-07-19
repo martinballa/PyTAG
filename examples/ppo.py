@@ -81,6 +81,7 @@ def parse_args():
     parser.add_argument("--n-players", type=int, default=2,
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)
+    parser.add_argument("--obs-type", type=str, choices=["json", "vector"], default="vector", help="observation type, some games only support certain types")
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -127,18 +128,13 @@ if __name__ == "__main__":
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, args.seed + i, args.opponent, args.n_players, framestack=args.framestack) for i in range(args.num_envs)]
+        [make_env(args.env_id, args.seed + i, args.opponent, args.n_players, framestack=args.framestack, obs_type=args.obs_type) for i in range(args.num_envs)]
     )
-    # envs = SyncVectorEnv([
-    #     lambda: StrategoWrapper(gym.make(args.env_id))
-    #     for i in range(args.num_envs)
-    # ])
     # For environments in which the action-masks align (aka same amount of actions)
     # This wrapper will merge them all into one numpy array, instead of having an array of arrays
     envs = MergeActionMaskWrapper(envs)
     envs = RecordEpisodeStatistics(envs)
 
-    # agent = Agent(args, envs).to(device)
     agent = PPONet(args, envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 

@@ -77,7 +77,7 @@ class PyTAG():
         self.action_space = num_actions
 
         obs_size = int(self._java_env.getObservationSpace())
-        self.observation_space = (obs_size,)
+        self.observation_space = obs_size # (obs_size,)
         self._action_tree_shape = 1
 
     def get_action_tree_shape(self):
@@ -88,7 +88,7 @@ class PyTAG():
         self._update_data()
 
         return self._last_obs_vector, {"action_tree": self._action_tree_shape, "action_mask": self._last_action_mask,
-                                       "has_won": self.terminal_reward(self._playerID)}
+                                       "has_won": int(self.terminal_reward(self._playerID))}
 
     def step(self, action):
         # Verify
@@ -107,7 +107,7 @@ class PyTAG():
         self._update_data()
         done = self._java_env.isDone()
         info = {"action_mask": self._last_action_mask,
-                "has_won": self.terminal_reward(self._playerID)}
+                "has_won": int(self.terminal_reward(self._playerID))}
         return self._last_obs_vector, reward, done, info
 
     def close(self):
@@ -202,7 +202,7 @@ class MultiAgentPyTAG(PyTAG):
         self._update_data()
 
         return {self._playerID :self._last_obs_vector}, {self._playerID:{"action_tree": self._action_tree_shape, "action_mask": self._last_action_mask,
-                                       "has_won": self.terminal_reward(self._playerID)}}
+                                       "has_won": int(self.terminal_reward(self._playerID))}}
 
     def step(self, action):
         """Executes the action for the current player and returns the observations for the next python agent that needs to act.
@@ -221,7 +221,7 @@ class MultiAgentPyTAG(PyTAG):
         # done is for all players
         done = self._java_env.isDone()
         info = {self._playerID: {"action_mask": self._last_action_mask,
-                "has_won": self.terminal_reward(self._playerID)}}
+                "has_won": int(self.terminal_reward(self._playerID))}}
         # rewards contains all the rewards for all players
         rewards = {p_id: reward for (p_id, reward) in enumerate(self.terminal_rewards())}
         return {self._playerID: self._last_obs_vector}, rewards, done, info
