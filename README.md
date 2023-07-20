@@ -1,23 +1,15 @@
 # PyTAG: a Reinforcement Learning interface for the [Tabletop Games Framework](http://www.tabletopgames.ai/)
 
-[![license](https://img.shields.io/github/license/GAIGResearch/TabletopGames)](LICENSE)
-![top-language](https://img.shields.io/github/languages/top/GAIGResearch/TabletopGames)
-![code-size](https://img.shields.io/github/languages/code-size/GAIGResearch/TabletopGames)
+[![license](https://img.shields.io/github/license/martinballa/PyTAG)](LICENSE)
+![top-language](https://img.shields.io/github/languages/top/martinballa/PyTAG)
+![code-size](https://img.shields.io/github/languages/code-size/martinballa/PyTAG)
 [![twitter](https://img.shields.io/twitter/follow/gameai_qmul?style=social)](https://twitter.com/intent/follow?screen_name=gameai_qmul)
-[![](https://img.shields.io/github/stars/GAIGResearch/TabletopGames.svg?label=Stars&style=social)](https://github.com/GAIGResearch/TabletopGames)
+[![](https://img.shields.io/github/stars/martinballa/PyTAG.svg?label=Stars&style=social)](https://github.com/GAIGResearch/TabletopGames)
 
-# THIS REPOSITORY IS UNDER CLEANUP! Please check back later!
-
-The [Tabletop Games Framework (TAG)](http://tabletopgames.ai) is a Java-based benchmark for developing modern board games for AI research.  TAG provides a common skeleton for implementing tabletop games based on a common API for AI agents, a set of components and classes to easily add new games and an import module for defining data in JSON format. At present, this platform includes the implementation of seven different tabletop games that can also be used as an example for further developments. Additionally, TAG also incorporates logging functionality that allows the user to perform a detailed analysis of the game, in terms of action space, branching factor, hidden information, and other measures of interest for Game AI research.
-![Pandemic](data/imgs/Pandemic.png)
-*Example GUI for Pandemic*
-
-For more information on TAG, please visit the [website](http://tabletopgames.ai).
-
-# Welcome to PyTAG
 
 PyTAG allows interaction with the TAG framework from Python. This repository contains all the python code required to run Reinforcement Learning agents.
-The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework. To make games compatible with PyTAG
+The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework.
+For more information on TAG, please visit the [website](http://tabletopgames.ai).
 
 ## Setting up
 The project requires Java with minimum version 8. In order to run the code, you must either download the repository, or clone it. If you are looking for a particular release, you can find all listed [here](https://github.com/GAIGResearch/TabletopGames/releases). 
@@ -27,14 +19,11 @@ The project requires Java with minimum version 8. In order to run the code, you 
 If you want to use the PyTAG only with the currently supported games you may use pip to install it.
 ```pip install -e pytag ```
 
-PyTAG interacts with the TAG framework by sharing memory across python and java using the jpype library which requires a jar file for the JAVA side. In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you may replace the jar file in pytag/jars/ with the updated ones. 
-
-
-or alternatively 
+PyTAG interacts with the TAG framework by sharing memory across python and java using the jpype library which requires a jar file for the JAVA side. In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you may replace the jar file in ```pytag/jars/``` with the updated ones.
 
 ## Getting started
 
-The examples folder provides a few python scripts that may serve as a starting point for using the framework. 
+The examples folder provides a few python scripts that may serve as a starting point for using the framework. PPO and PPO_LSTM were used as baselines in the CoG 23' paper. 
 
 
 ## Citing Information
@@ -60,7 +49,7 @@ To cite TAG in your work, please cite this paper:
     }
 ```
 
-## Contact
+## Contact and contribute
 The main method to contribute to our repository directly with code, or to suggest new features, point out bugs or ask questions about the project is through [creating new Issues on this github repository](https://github.com/GAIGResearch/TabletopGames/issues) or [creating new Pull Requests](https://github.com/GAIGResearch/TabletopGames/pulls). Alternatively, you may contact the authors of the papers listed above. 
 
 You can also find out more about the [QMUL Game AI Group](http://gameai.eecs.qmul.ac.uk/).

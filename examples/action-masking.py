@@ -93,6 +93,8 @@ def get_random_action(mask, action_tree):
 if __name__ == "__main__":
     env = gym.make("TAG/ExplodingKittens")
     obs, infos = env.reset()
+    # todo it seems like that we removed the action tree from the java env - need to add it back
+    # action trees always come flattened in the current version
     action_tree = infos["action_tree"]
     action_tree = ActionTree(action_tree)
 
