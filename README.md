@@ -6,6 +6,7 @@
 [![twitter](https://img.shields.io/twitter/follow/gameai_qmul?style=social)](https://twitter.com/intent/follow?screen_name=gameai_qmul)
 [![](https://img.shields.io/github/stars/martinballa/PyTAG.svg?label=Stars&style=social)](https://github.com/GAIGResearch/TabletopGames)
 
+
 PyTAG allows interaction with the TAG framework from Python. This repository contains all the python code required to run Reinforcement Learning agents.
 The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework.
 For more information on TAG, please visit the [website](http://tabletopgames.ai).
