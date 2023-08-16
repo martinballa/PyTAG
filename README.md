@@ -30,7 +30,7 @@ The examples folder provides a few python scripts that may serve as a starting p
 
 To cite PyTAG in your work, please cite this paper:
 ```
-@article{ballapytag,
+@article{balla2023pytag,
   title={PyTAG: Challenges and Opportunities for Reinforcement Learning in Tabletop Games},
   author={Balla, Martin and Long, George EM and Jeurissen, Dominik and Goodman, James and Gaina, Raluca D and Perez-Liebana, Diego}
   year= {2023},
