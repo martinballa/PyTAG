@@ -8,31 +8,33 @@
 
 
 PyTAG allows interaction with the TAG framework from Python. This repository contains all the python code required to run Reinforcement Learning agents.
-The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework.
-For more information on TAG, please visit the [website](http://tabletopgames.ai).
+The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework, but it is not limited to RL as using the python-java bridge all public functions and variables are accessible from python.
+If you want to learn more about TAG, please visit the [website](http://tabletopgames.ai).
 
 ## Setting up
-The project requires Java with minimum version 8. In order to run the code, you must either download the repository, or clone it. If you are looking for a particular release, you can find all listed [here](https://github.com/GAIGResearch/TabletopGames/releases). 
+The project requires Java with minimum version 8. Currently, to run PyTAG you need to set up a few things manually.
+1, Clone this repository.
+2, Download the latest jar file for [TAG](https://drive.google.com/file/d/16VVSEKUXj4lx-iniAprkSdttPzIYSxMN/view?usp=drive_link) 
+3, Place the jar file in the ```pytag/jars/``` folder.
+4, Install PyTAG as a python package ```pip install -e pytag/ ```
+5, (optional) you may test your installation by running the examples in ```examples/```
 
-- requirements: java version 8 and python 3
-
-If you want to use the PyTAG only with the currently supported games you may use pip to install it.
-```pip install -e pytag ```
-
-PyTAG interacts with the TAG framework by sharing memory across python and java using the jpype library which requires a jar file for the JAVA side. In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you may replace the jar file in ```pytag/jars/``` with the updated ones.
+In the future we are hoping to automate the installation process and make PyTAG more accessible. 
 
 ## Getting started
 
 The examples folder provides a few python scripts that may serve as a starting point for using the framework. PPO and PPO_LSTM were used as baselines in the CoG 23' paper. 
 
+## Modifying TAG
+In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you may replace the jar file in ```pytag/jars/``` with the updated one.
 
 ## Citing Information
 
 To cite PyTAG in your work, please cite this paper:
 ```
-@article{ballapytag,
+@article{balla2023pytag,
   title={PyTAG: Challenges and Opportunities for Reinforcement Learning in Tabletop Games},
-  author={Balla, Martin and Long, George EM and Jeurissen, Dominik and Goodman, James and Gaina, Raluca D and Perez-Liebana, Diego}
+  author={Balla, Martin and Long, George EM and Jeurissen, Dominik and Goodman, James and Gaina, Raluca D and Perez-Liebana, Diego},
   year= {2023},
   booktitle= {{IEEE Conference on Games (CoG), 2023}},
 }
