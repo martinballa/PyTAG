@@ -14,16 +14,17 @@ If you want to learn more about TAG, please visit the [website](http://tabletopg
 ## Setting up
 The project requires Java with minimum version 8. Currently, to run PyTAG you need to set up a few things manually.
 1, Clone this repository.
-2, Download the latest jar file for [TAG](https://drive.google.com/file/d/16VVSEKUXj4lx-iniAprkSdttPzIYSxMN/view?usp=drive_link) 
+2, Download the latest jar file for [TAG](https://drive.google.com/file/d/1uPNoZkdI4rJiFyNyXFVun_VcAlN3QIVQ/view?usp=drive_link) 
 3, Place the jar file in the ```pytag/jars/``` folder.
 4, Install PyTAG as a python package ```pip install -e pytag/ ```
 5, (optional) you may test your installation by running the examples in ```examples/```
 
 In the future we are hoping to automate the installation process and make PyTAG more accessible. 
+You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab notebook to try out PyTAG before installing it on your own machine.
 
 ## Getting started
 
-The examples folder provides a few python scripts that may serve as a starting point for using the framework. PPO and PPO_LSTM were used as baselines in the CoG 23' paper. 
+The examples folder provides a few python scripts that may serve as a starting point for using the framework. PPO and PPO_LSTM were used as baselines in the CoG 23' paper.
 
 ## Modifying TAG
 In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you may replace the jar file in ```pytag/jars/``` with the updated one.
