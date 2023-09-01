@@ -1,5 +1,6 @@
 import pytag
 from pytag.gym.wrappers import MergeActionMaskWrapper
+from pytag.pyTAG import PyTAG
 
 import gymnasium as gym
 from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
@@ -46,12 +47,12 @@ class ActionTree():
         #
         # self.tree = self.convert_to_torch(torch.tensor(java_tree))
 
-    def entropy(self):
-        if len(self.masks) == 0:
-            return super(CategoricalMasked, self).entropy()
-        p_log_p = self.logits * self.probs
-        p_log_p = torch.where(self.masks, p_log_p, torch.tensor(0.).to(device))
-        return -p_log_p.sum(-1)
+    # def entropy(self):
+    #     if len(self.masks) == 0:
+    #         return super(CategoricalMasked, self).entropy()
+    #     p_log_p = self.logits * self.probs
+    #     p_log_p = torch.where(self.masks, p_log_p, torch.tensor(0.).to(self.device))
+    #     return -p_log_p.sum(-1)
 
     def sample_from_logits(self, logits, mask):
         # todo should recursively sample from the logits
@@ -91,18 +92,21 @@ def get_random_action(mask, action_tree):
 
 
 if __name__ == "__main__":
-    env = gym.make("TAG/ExplodingKittens")
-    obs, infos = env.reset()
-    # todo it seems like that we removed the action tree from the java env - need to add it back
-    # action trees always come flattened in the current version
-    action_tree = infos["action_tree"]
-    action_tree = ActionTree(action_tree)
 
-    env = AsyncVectorEnv([
-        lambda: gym.make("TAG/ExplodingKittens")
-        # lambda: gym.make("TAG/TicTacToe")
-        for i in range(1)
-    ])
+    # Note that this example only works with regular shaped action trees like TTT
+    # If you want to try other games, you need to cast the action tree to a numpy array
+    env = PyTAG(agent_ids=["python", "random"], game_id="TicTacToe", mask_type="tree")
+    # # env = gym.make("TAG/ExplodingKittens", action_mask="tree")
+    # obs, infos = env.reset()
+    # # action trees always come flattened in the current version
+    # action_tree = infos["action_tree"]
+    # action_tree = ActionTree(action_tree)
+    #
+    # env = AsyncVectorEnv([
+    #     lambda: gym.make("TAG/ExplodingKittens")
+    #     # lambda: gym.make("TAG/TicTacToe")
+    #     for i in range(1)
+    # ])
     # For environments in which the action-masks align (aka same amount of actions)
     # This wrapper will merge them all into one numpy array, instead of having an array of arrays
     # env = MergeActionMaskWrapper(env)
@@ -112,7 +116,7 @@ if __name__ == "__main__":
     # same for env.observation_space and env.single_observation_space
     
     obs, infos = env.reset()
-    # action_tree = infos["action_tree"] #[0]
+    action_tree = torch.tensor(infos["action_tree"]) #[0]
     dones = [False]
     for i in range(200):
         # pick random, but valid action todo: only works with n-env == 1

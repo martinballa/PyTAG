@@ -40,12 +40,16 @@ class PyTAG():
     """Core class to interact with the pyTAG environment. This class is a wrapper around the Java environment.
     This class expects to have a single python agents
     Note that the java jar package is expected to be in the jars folder of the same directory as this file.
+    args:
+    @obs_type (str): "vector" or "json" - the way observations are represented
+    @mask_type (str): "flat" or "tree" - the way the action mask is structured (tree is a nested list)
     """
-    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector", mask_type="flat"):
         self._last_obs_vector = None
         self._last_action_mask = None
         self._rnd = random.Random(seed)
         self._obs_type = obs_type
+        self._mask_type = mask_type
 
         assert game_id in _game_registry, f"Game {game_id} not supported. Supported games are {_game_registry}"
         assert _game_registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
@@ -78,7 +82,7 @@ class PyTAG():
 
         obs_size = int(self._java_env.getObservationSpace())
         self.observation_space = obs_size # (obs_size,)
-        self._action_tree_shape = 1
+        self._action_tree_shape = self._java_env.getTreeShape()
 
     def get_action_tree_shape(self):
         return self._action_tree_shape
@@ -124,7 +128,10 @@ class PyTAG():
             obs = self._java_env.getObservationJson()
             self._last_obs_vector = obs
 
-        action_mask = self._java_env.getActionMask()
+        if self._mask_type == "flat":
+            action_mask = self._java_env.getActionMask()
+        else: # tree
+            action_mask = self._java_env.getActionTree()
         self._last_action_mask = np.array(action_mask, dtype=bool)
 
     def get_action_mask(self):
