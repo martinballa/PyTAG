@@ -5,10 +5,9 @@ import numpy as np
 import torch
 
 import jpype
-from jpype import *
 import jpype.imports
-from pytag.gym.wrappers import StrategoWrapper, SushiGoWrapper
-from pytag.pyTAG import list_supported_games
+from utils.wrappers import StrategoWrapper, SushiGoWrapper
+
 
 def make_env(env_id, seed, opponent, n_players, framestack=1, obs_type="vector"):
     def thunk():

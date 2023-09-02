@@ -17,7 +17,10 @@ The project requires Java with minimum version 8. Currently, to run PyTAG you ne
 2, Download the latest jar file for [TAG](https://drive.google.com/file/d/1uPNoZkdI4rJiFyNyXFVun_VcAlN3QIVQ/view?usp=drive_link) 
 3, Place the jar file in the ```pytag/jars/``` folder.
 4, Install PyTAG as a python package ```pip install -e pytag/ ```
-5, (optional) you may test your installation by running the examples in ```examples/```
+5, (optional) you may test your installation by running the examples in ```examples/action-masking.py```
+
+Some examples require additional python packages (for instance pytorch), these can be installed by running ```pip install -e pytag[examples]
+```. 
 
 In the future we are hoping to automate the installation process and make PyTAG more accessible. 
 You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab notebook to try out PyTAG before installing it on your own machine.
