@@ -6,7 +6,7 @@ setup(
     packages=find_packages(),
     package_data={'': ['jars/ModernBoardGame.jar']},
     include_package_data=True,
-    install_requires=["gymnasium", "Jpype1", "numpy"],
+    install_requires=["gymnasium", "Jpype1", "numpy", "gdown"],
     extras_require={
         "examples": ["torch", "tensorboard", "wandb"]
     }
