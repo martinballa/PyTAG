@@ -4,14 +4,13 @@ import os
 import random
 import time
 from distutils.util import strtobool
-import gym_
 import gymnasium as gym
 import numpy as np
 import torch
 
-from src.pytag.gym_.wrappers import MergeActionMaskWrapper, StrategoWrapper
-from src.pytag.ppo import make_env
-from src.pytag.utils.networks import PPONet
+from pytag.utils.wrappers import MergeActionMaskWrapper, StrategoWrapper
+from pytag.utils.common import make_env
+from utils.networks import PPONet
 
 def parse_args():
     # fmt: off

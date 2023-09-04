@@ -13,7 +13,7 @@ import torch.optim as optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-from pytag.gym.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
+from utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
 from pytag.utils.common import make_env
 from utils.networks import PPONet
 
