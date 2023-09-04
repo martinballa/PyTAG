@@ -15,11 +15,11 @@ You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIk
 
 ## Setting up
 The project requires Java with minimum version 8. To install pytag you may follow the steps below.
-1, Clone this repository.
-2, Run ```jar_setup.py``` to download the latest jar file for TAG (requires installing the ```gdown``` python module) or see the section on "Getting the TAG jar files" below for more options.
-3, Install PyTAG as a python package ```python pytag/setup.py develop```
-4, (optional) install pytag with the additional dependencies to run the baselines ```python pytag/setup.py develop easy_install "pytag[examples]"```
-5, (optional) you may test your installation by running the examples in ```examples/action-masking.py```
+- 1, Clone this repository.
+- 2, Run ```jar_setup.py``` to download the latest jar file for TAG (requires installing the ```gdown``` python module) or see the section on "Getting the TAG jar files" below for more options.
+- 3, Install PyTAG as a python package ```python pytag/setup.py develop```
+- 4, (optional) install pytag with the additional dependencies to run the baselines ```python pytag/setup.py develop easy_install "pytag[examples]"```
+- 5, (optional) you may test your installation by running the examples in ```examples/action-masking.py```
 
 ### Getting the TAG jar files
 Pytag is looking for the TAG jar files in the ```pytag/jars/``` folder. To get the latest jar files you may run ```jar_setup.py``` which will download the latest jar files and unpack them at the correct location.
