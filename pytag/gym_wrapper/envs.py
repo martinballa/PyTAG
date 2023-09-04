@@ -1,6 +1,7 @@
+# Gym wrappers for PyTAG
 import gymnasium as gym
 
-from pytag.pyTAG import PyTAG, MultiAgentPyTAG
+from pytag import PyTAG, MultiAgentPyTAG
 from typing import Dict, List
 
 class TagSingleplayerGym(gym.Env):
@@ -23,6 +24,9 @@ class TagSingleplayerGym(gym.Env):
 
     def get_action_tree_shape(self):
         return self._action_tree_shape
+
+    def sample_rnd_action(self):
+        return self._env.sample_rnd_action()
     
     def reset(self):
         obs, info = self._env.reset()

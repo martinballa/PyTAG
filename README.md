@@ -11,26 +11,31 @@ PyTAG allows interaction with the TAG framework from Python. This repository con
 The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework, but it is not limited to RL as using the python-java bridge all public functions and variables are accessible from python.
 If you want to learn more about TAG, please visit the [website](http://tabletopgames.ai).
 
+You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab notebook to try out PyTAG before installing it on your own machine.
+
 ## Setting up
-The project requires Java with minimum version 8. Currently, to run PyTAG you need to set up a few things manually.
+The project requires Java with minimum version 8. To install pytag you may follow the steps below.
 1, Clone this repository.
-2, Download the latest jar file for [TAG](https://drive.google.com/file/d/1uPNoZkdI4rJiFyNyXFVun_VcAlN3QIVQ/view?usp=drive_link) 
-3, Place the jar file in the ```pytag/jars/``` folder.
-4, Install PyTAG as a python package ```pip install -e pytag/ ```
+2, Run ```jar_setup.py``` to download the latest jar file for TAG (requires installing the ```gdown``` python module) or see the section on "Getting the TAG jar files" below for more options.
+3, Install PyTAG as a python package ```python pytag/setup.py develop```
+4, (optional) install pytag with the additional dependencies to run the baselines ```python pytag/setup.py install easy_install "pytag[examples]"```
 5, (optional) you may test your installation by running the examples in ```examples/action-masking.py```
 
-Some examples require additional python packages (for instance pytorch), these can be installed by running ```pip install -e pytag[examples]
-```. 
+### Getting the TAG jar files
+Pytag is looking for the TAG jar files in the ```pytag/jars/``` folder. To get the latest jar files you may run ```jar_setup.py``` which will download the latest jar files and unpack them at the correct location.
+Or alternatively you may manually download it from [Google drive](https://drive.google.com/file/d/1uPNoZkdI4rJiFyNyXFVun_VcAlN3QIVQ/view?usp=drive_link)  and place the jar files in the ```pytag/jars/``` folder.
 
-In the future we are hoping to automate the installation process and make PyTAG more accessible. 
-You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab notebook to try out PyTAG before installing it on your own machine.
+In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you need to create new jar files from TAG and place them in the ```pytag/jars/``` folder.
+
+### Installing PyTAG
+Note that in the above options we used ```python pytag/setup.py develop``` to install PyTAG. This will install PyTAG as a python package in development mode. This means that you can make changes to the code and it will be reflected in your python environment without having to reinstall the package. If you want to install PyTAG as a regular python package you may use ```python pytag/setup.py install``` instead.
 
 ## Getting started
 
-The examples folder provides a few python scripts that may serve as a starting point for using the framework. PPO and PPO_LSTM were used as baselines in the CoG 23' paper.
-
-## Modifying TAG
-In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you may replace the jar file in ```pytag/jars/``` with the updated one.
+The examples folder provides a few python scripts that may serve as a starting point for using the framework. 
+```pt-action-masking.py``` demonstrates how the action masking may be used to sample random valid actions manually. ```gym-action-masking.py``` extends this to using the action masking in a gym environment. ```gym-random.py``` shows how the built-in action sampler may be used.
+```ma-random.py``` demonstrates how multiple python agents may be controlled.
+The remaining scripts are used to run the PPO baselines from the IEEE CoG 23' paper. ```ppo-eval.py``` allows you to load a trained PPO model for evaluation.
 
 ## Citing Information
 

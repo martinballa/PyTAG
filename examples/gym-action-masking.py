@@ -1,16 +1,16 @@
 # Example that demonstrates how to use action masking manually
+import pytag.gym_wrapper
+
 import random
 import gymnasium as gym
 from gymnasium.vector import SyncVectorEnv
 import torch
 import numpy as np
-import pytag.gym_wrappers
-
 
 if __name__ == "__main__":
     # this example shows how to sample random actions using an action mask manually
     env = SyncVectorEnv([
-        lambda: gym.make("TAG/Stratego", obs_type="json")
+        lambda: gym.make("TAG/Stratego", obs_type="vector")
         for i in range(1)
     ])
     
