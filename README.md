@@ -14,11 +14,11 @@ If you want to learn more about TAG, please visit the [website](http://tabletopg
 You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab notebook to try out PyTAG before installing it on your own machine.
 
 ## Setting up
-The project requires Java with minimum version 8. To install pytag you may follow the steps below.
+The project requires Java with minimum version 8. We recommend installing pytag in a new virtual environment. To install pytag you may follow the steps below.
 - 1, Clone this repository.
-- 2, Install PyTAG as a python package ```python pytag/setup.py develop```
-- 3, Run ```jar_setup.py``` to download the latest jar file for TAG (requires installing the ```gdown``` python module) or see the section on "Getting the TAG jar files" below for more options.
-- 4, (optional) install pytag with the additional dependencies to run the baselines ```python pytag/setup.py develop easy_install "pytag[examples]"```
+- 2, Install PyTAG as a python package ```pip install -e .```
+- 3, Run ```jar_setup.py``` to download the latest jar file for TAG or see the section on "Getting the TAG jar files" below for more options.
+- 4, (optional) install pytag with the additional dependencies to run the baselines ```pip install -e .[examples]```
 - 5, (optional) you may test your installation by running the examples in ```examples/``` for instance ```pt-action-masking.py```.
 
 ### Getting the TAG jar files
@@ -26,9 +26,6 @@ Pytag is looking for the TAG jar files in the ```pytag/jars/``` folder. To get t
 Or alternatively you may manually download it from [Google drive](https://drive.google.com/file/d/1uPNoZkdI4rJiFyNyXFVun_VcAlN3QIVQ/view?usp=drive_link)  and place the jar files in the ```pytag/jars/``` folder.
 
 In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you need to create new jar files from TAG and place them in the ```pytag/jars/``` folder.
-
-### Installing PyTAG
-Note that in the above options we used ```python pytag/setup.py develop``` to install PyTAG. This will install PyTAG as a python package in development mode. This means that you can make changes to the code and it will be reflected in your python environment without having to reinstall the package. If you want to install PyTAG as a regular python package you may use ```python pytag/setup.py install``` instead.
 
 ## Getting started
 
