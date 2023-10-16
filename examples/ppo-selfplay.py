@@ -3,6 +3,7 @@ import argparse
 import os
 import random
 import time
+from collections import deque
 from distutils.util import strtobool
 
 import gymnasium as gym
@@ -13,9 +14,86 @@ import torch.optim as optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
+from pytag import gym_wrapper
+from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
 from pytag.utils.common import make_env
-from utils.networks import PPONet
+from examples.utils.networks import PPONet
+
+class SelfPlayAssistant():
+    '''
+    Self-play assistant for PPO - handles checkpointing and opponent selection
+    '''
+
+    def __init__(self):
+        self.checkpoint_freq = int(5e5) # every 500k steps
+        self.window = 10 # number of previous checkpoints to store
+        self.replace_freq = int(5e4) # every 50k steps
+        self.self_play_prob = 0.5 # probability to play against self
+        self.checkpoints = deque(maxlen=self.window)
+
+    def replace(self, agents):
+        # return chosen checkpoints as opponents
+        return agents
+
+    def add_checkpoint(self, agent):
+        # todo save and remove old checkpoint
+        self.checkpoints.append(agent)
+
+def evaluate(args, agent, global_step, opponents=["random"]):
+    for opponent in opponents:
+        # todo maybe instead of making a new env, we could just store the eval envs
+        envs = gym.vector.SyncVectorEnv(
+            [make_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack) for i in
+             range(args.num_envs)]
+        )
+        # For environments in which the action-masks align (aka same amount of actions)
+        # This wrapper will merge them all into one numpy array, instead of having an array of arrays
+        envs = MergeActionMaskWrapper(envs)
+        envs = RecordEpisodeStatistics(envs)
+
+        # stats
+        episodes = 0
+        total_steps = 0
+        rewards, lengths, wins = [], [], []
+
+        start_time = time.time()
+        next_obs, next_info = envs.reset()
+        next_obs = torch.tensor(next_obs).to(device)
+        if args.framestack > 1:
+            next_obs = next_obs.view(next_obs.shape[0], -1)
+        next_masks = torch.from_numpy(next_info["action_mask"]).to(device)
+
+        while episodes < args.eval_episodes:
+            total_steps += 1 * args.num_envs
+
+            with torch.no_grad():
+                action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
+
+            next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
+
+            # preparing for next step
+            next_masks = torch.from_numpy(info["action_mask"]).to(device)
+            next_obs = torch.Tensor(next_obs).to(device)
+            if args.framestack > 1:
+                next_obs = next_obs.view(next_obs.shape[0], -1)
+
+            # collect stats about the episode
+            if "episode" in info:
+                for i in range(args.num_envs):
+                    if info["_episode"][i]:
+                        rewards.append(info["episode"]["r"][i])
+                        lengths.append(info["episode"]["l"][i])
+                        wins.append(info["episode"]["w"][i])
+
+                        episodes += 1
+
+        writer.add_scalar(f"eval/{opponent}/mean_return", np.mean(rewards), global_step)
+        writer.add_scalar(f"eval/{opponent}/mean_length", np.mean(lengths), global_step)
+        writer.add_scalar(f"eval/{opponent}/win_rate", np.mean(wins), global_step)
+        writer.add_scalar(f"eval/{opponent}/std_return", np.std(rewards), global_step)
+        writer.add_scalar(f"eval/{opponent}/std_length", np.std(lengths), global_step)
+        writer.add_scalar(f"eval/{opponent}/SPS", int(total_steps / (time.time() - start_time)), global_step)
+
 
 def parse_args():
     # fmt: off
@@ -40,6 +118,12 @@ def parse_args():
         help="the entity (team) of wandb's project")
     parser.add_argument("--capture-video", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="whether to capture videos of the agent performances (check out `videos` folder)")
+    # eval_freq
+    parser.add_argument("--eval-freq", type=int, default=10000,
+        help="Evaluation frequency")
+    parser.add_argument("--eval-episodes", type=int, default=5,
+        help="Evaluation episodes per setup")
+
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="TAG/Diamant-v0",
@@ -164,6 +248,9 @@ if __name__ == "__main__":
     next_masks = torch.from_numpy(next_info["action_mask"]).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
+
+    # making sure that we can update it correctly
+    eval_freq = (args.eval_freq + (args.eval_freq % args.num_envs)) // num_updates
 
     for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
@@ -300,6 +387,11 @@ if __name__ == "__main__":
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         # print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+        # evaluation
+        if global_step % eval_freq == 0:
+            evaluate(args, agent, global_step, opponents=["random", "osla"])
+
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")
