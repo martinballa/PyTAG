@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from pytag import gym_wrapper
 from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
-from pytag.utils.common import make_env
+from pytag.utils.common import make_env, make_ma_env
 from examples.utils.networks import PPONet
 
 class SelfPlayAssistant():
@@ -25,25 +25,37 @@ class SelfPlayAssistant():
     '''
 
     def __init__(self):
+        # todo manage the training agents
         self.checkpoint_freq = int(5e5) # every 500k steps
         self.window = 10 # number of previous checkpoints to store
         self.replace_freq = int(5e4) # every 50k steps
         self.self_play_prob = 0.5 # probability to play against self
         self.checkpoints = deque(maxlen=self.window)
+        self.save_checkpoints = False
 
-    def replace(self, agents):
+        # self.agent = agent
+
+    def update_pool(self, agent):
         # return chosen checkpoints as opponents
-        return agents
+        self.checkpoints.append(agent.copy())
 
-    def add_checkpoint(self, agent):
-        # todo save and remove old checkpoint
-        self.checkpoints.append(agent)
+    def sample_opponent(self):
+        return random.choice(self.checkpoints)
+
+    def add_checkpoint(self, args, agent):
+        agent_copy = PPONet(args, envs).to(device)
+        agent_copy.load_state_dict(agent.state_dict())
+        self.checkpoints.append(agent_copy)
 
 def evaluate(args, agent, global_step, opponents=["random"]):
     for opponent in opponents:
         # todo maybe instead of making a new env, we could just store the eval envs
+        obs_type = "vector"
+        if "Sushi" in args.env_id:
+            obs_type = "json"
+        # could add:  randomise_order=True,
         envs = gym.vector.SyncVectorEnv(
-            [make_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack) for i in
+            [make_ma_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
              range(args.num_envs)]
         )
         # For environments in which the action-masks align (aka same amount of actions)
@@ -210,8 +222,14 @@ if __name__ == "__main__":
         device = torch.device('cpu')
 
     # env setup
+    # todo training manager could also re-randomise this occasionally
+    obs_type = "vector"
+    if "Sushi" in args.env_id:
+        obs_type = "json"
+    # todo handle this better
+    args.opponent = "python"
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, args.seed + i, args.opponent, args.n_players, framestack=args.framestack) for i in range(args.num_envs)]
+        [make_ma_env(args.env_id, args.seed + i, args.opponent, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type) for i in range(args.num_envs)]
     )
     # envs = SyncVectorEnv([
     #     lambda: StrategoWrapper(gym.make(args.env_id))
@@ -225,6 +243,11 @@ if __name__ == "__main__":
     # agent = Agent(args, envs).to(device)
     agent = PPONet(args, envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    # todo check if we need to modify this
+    training_manager = SelfPlayAssistant()
+    training_manager.add_checkpoint(args, agent)
+    opponent = training_manager.sample_opponent()
 
     # ALGO Logic: Storage setup
     if args.framestack > 1:
@@ -251,6 +274,8 @@ if __name__ == "__main__":
 
     # making sure that we can update it correctly
     eval_freq = (args.eval_freq + (args.eval_freq % args.num_envs)) // num_updates
+
+    # todo all agents are python agents - so we sample one that we control at reset
 
     for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
@@ -390,7 +415,7 @@ if __name__ == "__main__":
 
         # evaluation
         if global_step % eval_freq == 0:
-            evaluate(args, agent, global_step, opponents=["random", "osla"])
+            evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
 
 
     # create checkpoint
