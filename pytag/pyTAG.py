@@ -143,7 +143,7 @@ class PyTAG():
 
 
     def getPlayerID(self):
-        return self._java_env.getPlayerID()
+        return int(self._java_env.getPlayerID())
 
     def has_won(self, player_id=0):
         return int(str(self._java_env.getPlayerResults()[player_id]) == "WIN_GAME")
@@ -178,17 +178,20 @@ class SelfPlayPyTAG(PyTAG):
     """
     def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
         super().__init__(["python"]*n_players, game_id, seed, obs_type)
-        self.player_mapping = []
+        self.player_mapping = [i for i in range(n_players)]
 
     def reset(self):
-        obs, info = super.reset()
+        obs, info = super().reset()
+        self._rnd.shuffle(self.player_mapping)
         info["player_id"] = self.getPlayerID()
+        info["learning_player"] = self.player_mapping[0]
         return obs, info
 
     def step(self, action):
-        obs, rewards, done, info = super.step(action)
+        obs, rewards, done, info = super().step(action)
         info["player_id"] = self.getPlayerID()
-        return obs, reward, done, info
+        info["learning_player"] = self.player_mapping[0]
+        return obs, rewards, done, info
 
 
 
