@@ -171,6 +171,28 @@ class PyTAG():
                 results[i] = 0.0
         return results
 
+class SelfPlayPyTAG(PyTAG):
+    """
+    Only running python agents for training - player IDs are randomised at each episode
+    player ids are return in info rather than as a dictionary
+    """
+    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+        super().__init__(["python"]*n_players, game_id, seed, obs_type)
+        self.player_mapping = []
+
+    def reset(self):
+        obs, info = super.reset()
+        info["player_id"] = self.getPlayerID()
+        return obs, info
+
+    def step(self, action):
+        obs, rewards, done, info = super.step(action)
+        info["player_id"] = self.getPlayerID()
+        return obs, reward, done, info
+
+
+
+
 class MultiAgentPyTAG(PyTAG):
     """If there are more than one python agents, the observations are handled as dictionaries with the agent id as key.
     """
