@@ -49,21 +49,37 @@ class SelfPlayAssistant():
 
 def split_obs(obs, mask, player_id, training_id):
     """Function used to split the observation into the player's own observation and the opponent's observation."""
-    # todo we need int64 for indices and not bool
-    # todo shapes are wrong - make sure we unsqueeze first
-    # todo there are 2 cases - 1 for acting and another for optimisation - opt has an extra batch size dimension
+    # Only used for acting - during optimisation we only work from our agent's point of view
     filter = (player_id == training_id)
     obs_filter = filter.unsqueeze(-1).repeat(1, obs.shape[-1])
     mask_filter = filter.unsqueeze(-1).repeat(1, mask.shape[-1])
 
     obs_, opp_obs = obs[obs_filter].reshape(-1, obs.shape[-1]), obs[~obs_filter].reshape(-1, obs.shape[-1])
     mask_, opp_mask = mask[mask_filter].reshape(-1, mask.shape[-1]), mask[~mask_filter].reshape(-1, mask.shape[-1])
-    # training_obs = torch.gather(obs, 0, obs_filter.long())
-    # train_mask = torch.gather(mask, 0, mask_filter.long())
-    #
-    # opp_obs = torch.gather(obs, 1, (~obs_filter).long())
-    # opp_mask = torch.gather(mask, 1, (~mask_filter).long())
     return (obs_, opp_obs), (mask_, opp_mask)
+
+def merge_actions(train_ids, actions, opp_actions):
+    """Function to merge back together the actions"""
+    i = j = 0
+    results = torch.zeros(actions.shape[0] + opp_actions.shape[0], dtype=actions.dtype)
+    for id in train_ids:
+        if id:
+            results[i+j] = actions[i]
+            i += 1
+        else:
+            results[i+j] = opp_actions[j]
+            j += 1
+    return results
+
+
+def insert_at_indices(buffer, global_step, indices, values):
+    # inserts values into tensor at indices - modifies buffer directly
+    # mainly used to populate the tensors during training with each env's corresponding transitions
+    # buffer is [Batch, num-envs, ...]
+    for i, step, v in zip(range(len(indices)), global_step, values):
+        if indices[i]:
+            buffer[step, i] = v
+
 
 def evaluate(args, agent, global_step, opponents=["random"]):
     for opponent in opponents:
@@ -73,8 +89,9 @@ def evaluate(args, agent, global_step, opponents=["random"]):
             obs_type = "json"
         # could add:  randomise_order=True,
         # todo anytime we are called for action - it's the RL agent
+        env_id = "TAG/SushiGo-v0" # todo revert to just using args.env_id
         envs = gym.vector.SyncVectorEnv(
-            [make_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
+            [make_env(env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
              range(args.num_envs)]
         )
         # For environments in which the action-masks align (aka same amount of actions)
@@ -156,7 +173,6 @@ def parse_args():
         help="Evaluation frequency")
     parser.add_argument("--eval-episodes", type=int, default=5,
         help="Evaluation episodes per setup")
-
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="TAG/Diamant-v0",
@@ -295,9 +311,9 @@ if __name__ == "__main__":
     player_id = torch.from_numpy(next_info["player_id"]).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
-    steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
 
     # making sure that we can update it correctly
+    # todo this needs to be adjusted
     eval_freq = (args.eval_freq + (args.eval_freq % args.num_envs)) // num_updates
 
     for update in range(1, num_updates + 1):
@@ -309,53 +325,72 @@ if __name__ == "__main__":
 
         # todo find alternative way to decide when buffer is full
         step = 0
+        steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
         while step < args.num_steps:
-        # for step in range(0, args.num_steps):
-            steps += (learning_id == player_id)
-            step = steps.min()
+            # note that step is max(steps) so if any of the envs reach step we stop! - we don't wait to fill up all the transitions
+            train_ids = (learning_id == player_id).int()
+
             # step is not a scalar value - but rather trajectory length for each training agent
             #   approach: split and merge observations depending on who needs to act
             #   update step and the trajectories where training_id is not zero
 
             # ALGO LOGIC: action logic
+            action = opp_action = torch.zeros(0) # just a placeholder
+            logprob = opp_logprob = torch.zeros(0)
             with torch.no_grad():
-                # todo we should keep the env id's
-                (next_obs, opp_obs), (next_masks, opp_mask) = split_obs(next_obs, next_masks, player_id, learning_id)
+                (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, player_id, learning_id)
                 if len(next_obs > 0):
-                    # todo we need to insert everything into the buffer using the training id
-                    global_step += 1 * args.num_envs # this is the total steps - including agents not currently trained
-                    obs[step] = next_obs
-                    dones[step] = next_done
-                    action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
-                    values[step] = value.flatten()
+                    # global step only counts where our training agent is acting
+                    global_step += sum(train_ids)
+
+                    # original
+                    # obs[step] = next_obs
+                    # dones[step] = next_done
+                    # action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
+                    # values[step] = value.flatten()
+
+                    # modified
+                    insert_at_indices(obs, steps, train_ids, next_obs)
+                    insert_at_indices(dones, steps, train_ids, next_done)
+                    action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
+                    insert_at_indices(values, steps, train_ids, value.flatten())
                 if (len(opp_obs > 0)):
-                    if len(next_obs > 0): print("split between obs and opp. obs - should not be the case in sushigo")
-                    action, logprob, _, value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
+                    opp_action, opp_logprob, _, value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
+            # if len(next_obs > 0):
+            # actions[step] = action
+            # masks[step] = next_masks
+            # logprobs[step] = logprob
+
+            # modified
             if len(next_obs > 0):
-                actions[step] = action
-                masks[step] = next_masks
-                logprobs[step] = logprob
-
-                # TRY NOT TO MODIFY: execute the game and log data.
-                next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
-                next_masks = torch.from_numpy(info["action_mask"]).to(device)
-                learning_id = torch.from_numpy(info["learning_player"]).to(device)
-                player_id = torch.from_numpy(info["player_id"]).to(device)
-                rewards[step] = torch.tensor(reward).to(device).view(-1) # todo check when we need to save the action!
-                next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
-                if args.framestack > 1:
-                    next_obs = next_obs.view(next_obs.shape[0], -1)
+                # merge back actions and logprobs
+                action_ = merge_actions(train_ids, action, opp_action)
+                logprob = merge_actions(train_ids, logprob, opp_logprob)
+                insert_at_indices(actions, steps, train_ids, action)
+                insert_at_indices(logprobs, steps, train_ids, logprob)
+                insert_at_indices(masks, steps, train_ids, next_masks)
             else:
-                next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
-                next_masks = torch.from_numpy(info["action_mask"]).to(device)
-                learning_id = torch.from_numpy(info["learning_player"]).to(device)
-                player_id = torch.from_numpy(info["player_id"]).to(device)
-                next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
-                if args.framestack > 1:
-                    next_obs = next_obs.view(next_obs.shape[0], -1)
+                action_ = opp_action
 
-            if "episode" in info: # todo not sure if it's faster than just iterationg over _episode
+            # TRY NOT TO MODIFY: execute the game and log data.
+            # merge the actions back together
+            next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
+            next_masks = torch.from_numpy(info["action_mask"]).to(device)
+            learning_id = torch.from_numpy(info["learning_player"]).to(device)
+            player_id = torch.from_numpy(info["player_id"]).to(device)
+            # todo check on reward - need to make sure that it belong to the current player
+            # rewards[step] = torch.tensor(reward).to(device).view(-1) # todo check when we need to save the action!
+            insert_at_indices(rewards, steps, train_ids, torch.tensor(reward).to(device).view(-1))
+            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
+            if args.framestack > 1:
+                next_obs = next_obs.view(next_obs.shape[0], -1)
+
+            # keep track of the steps
+            steps += train_ids
+            step = steps.max()
+
+            if "episode" in info:
                 for i in range(args.num_envs):
                     if info["_episode"][i]:
                         # print(f"global_step={global_step}, episodic_return={info['episode']['r'][i]}")
@@ -365,6 +400,7 @@ if __name__ == "__main__":
 
         # bootstrap value if not done
         # todo update starts here: we want to take the final observation where the training agent was used for acting
+        # todo take into account the steps - beyond that we want to cut the trajectory
         with torch.no_grad():
             next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
