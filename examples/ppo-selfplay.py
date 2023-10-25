@@ -416,24 +416,51 @@ if __name__ == "__main__":
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + values
 
+        # cut off the trajectories at the last step where the training agent was used
+
+        # if args.framestack > 1:
+        #     obs = torch.zeros(
+        #         (args.num_steps, args.num_envs) + (np.array(envs.single_observation_space.shape).prod(),)).to(device)
+        # else:
+        n_transitions = torch.sum(steps)
+        b_obs = torch.zeros((n_transitions,) + envs.single_observation_space.shape).to(device)
+        b_logprobs = torch.zeros((n_transitions)).to(device)
+        b_actions = torch.zeros((n_transitions,) + envs.single_action_space.shape).to(device)
+        b_masks = torch.zeros((n_transitions, envs.single_action_space.n), dtype=torch.bool).to(device)
+        b_advantages = torch.zeros((n_transitions)).to(device)
+        b_returns = torch.zeros((n_transitions)).to(device)
+        b_values = torch.zeros((n_transitions)).to(device)
+
+        # flatten the batch and cut-off the trajectories
+        for i in range(len(steps)):
+            b_obs[:steps[i]] = obs[:steps[i], i]
+            b_logprobs[:steps[i]] = logprobs[:steps[i], i]
+            b_actions[:steps[i]] = actions[:steps[i], i]
+            b_masks[:steps[i]] = masks[:steps[i], i]
+            b_advantages[:steps[i]] = advantages[:steps[i], i]
+            b_returns[:steps[i]] = returns[:steps[i], i]
+            b_values[:steps[i]] = values[:steps[i], i]
+
+
+
         # flatten the batch
-        if args.framestack > 1:
-            b_obs = obs.reshape((-1,) + ((np.array(envs.single_observation_space.shape)).prod(),))
-        else:
-            b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        b_masks = masks.reshape((-1,) + (envs.single_action_space.n, ))
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = values.reshape(-1)
+        # if args.framestack > 1:
+        #     b_obs = obs.reshape((-1,) + ((np.array(envs.single_observation_space.shape)).prod(),))
+        # else:
+        #     b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+        # b_logprobs = logprobs.reshape(-1)
+        # b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+        # b_masks = masks.reshape((-1,) + (envs.single_action_space.n, ))
+        # b_advantages = advantages.reshape(-1)
+        # b_returns = returns.reshape(-1)
+        # b_values = values.reshape(-1)
 
         # Optimizing the policy and value network
-        b_inds = np.arange(args.batch_size)
+        b_inds = np.arange(n_transitions)
         clipfracs = []
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
-            for start in range(0, args.batch_size, args.minibatch_size):
+            for start in range(0, n_transitions, args.minibatch_size):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
