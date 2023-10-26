@@ -88,10 +88,8 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         if "Sushi" in args.env_id:
             obs_type = "json"
         # could add:  randomise_order=True,
-        # todo anytime we are called for action - it's the RL agent
-        env_id = "TAG/SushiGo-v0" # todo revert to just using args.env_id
         envs = gym.vector.SyncVectorEnv(
-            [make_env(env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
+            [make_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
              range(args.num_envs)]
         )
         # For environments in which the action-masks align (aka same amount of actions)
@@ -373,6 +371,7 @@ if __name__ == "__main__":
             else:
                 action_ = opp_action
 
+            # print(f"player id before step {player_id} and {learning_id}")
             # TRY NOT TO MODIFY: execute the game and log data.
             # merge the actions back together
             next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
@@ -405,13 +404,15 @@ if __name__ == "__main__":
             next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            for t in reversed(range(args.num_steps)):
-                if t == args.num_steps - 1:
-                    nextnonterminal = 1.0 - next_done
-                    nextvalues = next_value
-                else:
-                    nextnonterminal = 1.0 - dones[t + 1]
-                    nextvalues = values[t + 1]
+            for t in reversed(range(args.num_steps - 1)):
+                # with (steps > t).int() we filter out the incorrect values
+                # last obs is rarely for the last acting player
+                # if t == args.num_steps - 1:
+                #     nextnonterminal = 1.0 - next_done
+                #     nextvalues = next_value * (steps > t).int()
+                # else:
+                nextnonterminal = 1.0 - dones[t + 1]
+                nextvalues = values[t + 1] * (steps > t).int()
                 delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + values
@@ -528,6 +529,7 @@ if __name__ == "__main__":
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
         # evaluation
+        # todo add this back
         if global_step % eval_freq == 0:
             evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
 

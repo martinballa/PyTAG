@@ -178,19 +178,50 @@ class SelfPlayPyTAG(PyTAG):
     """
     def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
         super().__init__(["python"]*n_players, game_id, seed, obs_type)
+        # the training agent always gets our internal ID representation not the ids coming from the env directly
+        # the learner player always has the ID 0 internally
+        self._learner_id = 0
         self.player_mapping = [i for i in range(n_players)]
+        self._done = False
+
+    def getPlayerID(self):
+        # due to the randomisation of the player ids, we need to map the player id to the correct player
+        playerID = super().getPlayerID()
+        return self.player_mapping.index(playerID)
 
     def reset(self):
         obs, info = super().reset()
+        self._done = False
         self._rnd.shuffle(self.player_mapping)
         info["player_id"] = self.getPlayerID()
-        info["learning_player"] = self.player_mapping[0]
+        info["learning_player"] = self.player_mapping.index(self._learner_id)
         return obs, info
 
     def step(self, action):
+        if self._done:
+            # we always need to give the last observation to the learning player
+            # find out which player has not seen its terminal
+            obs = self._last_obs_vector
+            reward = self.terminal_reward(self.player_mapping[self._learner_id])
+            done = True
+            info = {"action_mask": self._last_action_mask,
+                    "has_won": int(self.terminal_reward(self.player_mapping.index(self._learner_id)))}
+            info["player_id"] = self.player_mapping.index(self._learner_id)
+            info["learning_player"] = self.player_mapping.index(self._learner_id)
+            return obs, reward, done, info
+
         obs, rewards, done, info = super().step(action)
         info["player_id"] = self.getPlayerID()
-        info["learning_player"] = self.player_mapping[0]
+        info["learning_player"] = self.player_mapping.index(self._learner_id)
+        # different player may have different dones
+        if done:
+            # we only want to make sure that the training player gets its final observation
+            if self.getPlayerID() != self.player_mapping.index(self._learner_id):
+                self._done = True
+                done = False # make sure that we don't reset env too early
+                # cache and give everyone the last observation with their corresponding rewards
+                rewards = self.terminal_reward(super().getPlayerID())
+
         return obs, rewards, done, info
 
 

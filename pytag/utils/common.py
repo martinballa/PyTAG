@@ -6,7 +6,7 @@ import torch
 
 import jpype
 import jpype.imports
-from pytag.gym_wrapper.envs import TAGSelfPlayGYm
+from pytag.gym_wrapper.envs import TAGSelfPlayGYm, TagSingleplayerGym
 from pytag import PyTAG, MultiAgentPyTAG, SelfPlayPyTAG
 from pytag.utils.wrappers import StrategoWrapper, SushiGoWrapper, MASushiGoWrapper
 
@@ -41,7 +41,8 @@ def make_env(env_id, seed, opponent, n_players, framestack=1, obs_type="vector",
         if randomise_order:
             np.random.shuffle(agent_ids)
         # obs_type = "json" if "Sushi" in env_id else "vector" # , obs_type=obs_type
-        env = gym.make(env_id, seed=seed, agent_ids=agent_ids, obs_type=obs_type)
+        env = TagSingleplayerGym(game_id=env_id, agent_ids=agent_ids, seed=seed, obs_type=obs_type)
+        # env = gym.make(env_id, seed=seed, agent_ids=agent_ids, obs_type=obs_type)
         if "Stratego" in env_id:
             env = StrategoWrapper(env)
         if "Sushi" in env_id:
