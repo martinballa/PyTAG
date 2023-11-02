@@ -278,12 +278,9 @@ if __name__ == "__main__":
         device = torch.device('cpu')
 
     # env setup
-    # todo training manager could also re-randomise this occasionally
     obs_type = "vector"
     if "Sushi" in args.env_id:
         obs_type = "json"
-    # todo handle this better
-    # args.opponent = "python"
     envs = gym.vector.SyncVectorEnv(
         [make_sp_env(args.env_id, args.seed + i, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type) for i in range(args.num_envs)]
     )
@@ -296,13 +293,10 @@ if __name__ == "__main__":
     envs = MergeActionMaskWrapper(envs)
     envs = RecordEpisodeStatistics(envs)
 
-    # agent = Agent(args, envs).to(device)
     agent = PPONet(args, envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    # todo check if we need to modify this
-    # todo WIP: add more hooks in the functions in the next iteration
-    training_manager = SelfPlayAssistant()
+    training_manager = SelfPlayAssistant(checkpoint_freq=int(5e5), replace_freq=int(1e5))
     training_manager.add_checkpoint(args, agent, 0)
     opponent = training_manager.sample_opponent()
 
@@ -359,6 +353,15 @@ if __name__ == "__main__":
                 if len(next_obs > 0):
                     # global step only counts where our training agent is acting
                     global_step += sum(train_ids)
+
+                    # self play assistant admin - we
+                    if global_step % training_manager.checkpoint_freq < sum(train_ids):
+                        # print(f"{global_step} is a checkpoint step {training_manager} andd {sum(train_ids)}")
+                        # print(f"new checkpoint saved at  {global_step}")
+                        training_manager.add_checkpoint(args, agent, global_step)
+                    if global_step % training_manager.replace_freq < sum(train_ids):
+                        # print(f"new opponent sampled at {global_step}")
+                        opponent = training_manager.sample_opponent()
 
                     # original
                     # obs[step] = next_obs
@@ -549,15 +552,6 @@ if __name__ == "__main__":
         # evaluation
         if global_step % eval_freq == 0:
             evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
-
-        # self play assistant admin
-        # todo we need to check when these are actually passing here
-        if global_step % training_manager.checkpoint_freq < sum(train_ids):
-            print(f"new checkpoint saved at  {global_step}")
-            training_manager.add_checkpoint(args, agent, global_step)
-        if global_step % training_manager.replace_freq < sum(train_ids):
-            print(f"new opponent sampled at {global_step}")
-            opponent = training_manager.sample_opponent()
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")
