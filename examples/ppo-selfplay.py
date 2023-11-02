@@ -15,7 +15,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from pytag import gym_wrapper
-from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
+from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics, RecordSelfPlayEpStats
 from pytag.utils.common import make_env, make_sp_env
 from examples.utils.networks import PPONet
 
@@ -97,9 +97,12 @@ def insert_at_indices(buffer, global_step, indices, values):
     # inserts values into tensor at indices - modifies buffer directly
     # mainly used to populate the tensors during training with each env's corresponding transitions
     # buffer is [Batch, num-envs, ...]
-    for i, step, v in zip(range(len(indices)), global_step, values):
+    j = 0
+    # note that len(indices) >= len(values)
+    for i in range(len(indices)):
         if indices[i]:
-            buffer[step, i] = v
+            buffer[global_step[i], i] = values[j]
+            j += 1
 
 
 def evaluate(args, agent, global_step, opponents=["random"]):
@@ -291,12 +294,12 @@ if __name__ == "__main__":
     # For environments in which the action-masks align (aka same amount of actions)
     # This wrapper will merge them all into one numpy array, instead of having an array of arrays
     envs = MergeActionMaskWrapper(envs)
-    envs = RecordEpisodeStatistics(envs)
+    envs = RecordSelfPlayEpStats(envs)
 
     agent = PPONet(args, envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    training_manager = SelfPlayAssistant(checkpoint_freq=int(5e5), replace_freq=int(1e5))
+    training_manager = SelfPlayAssistant(checkpoint_freq=int(1e6), replace_freq=int(5e5))
     training_manager.add_checkpoint(args, agent, 0)
     opponent = training_manager.sample_opponent()
 
@@ -356,11 +359,8 @@ if __name__ == "__main__":
 
                     # self play assistant admin - we
                     if global_step % training_manager.checkpoint_freq < sum(train_ids):
-                        # print(f"{global_step} is a checkpoint step {training_manager} andd {sum(train_ids)}")
-                        # print(f"new checkpoint saved at  {global_step}")
                         training_manager.add_checkpoint(args, agent, global_step)
                     if global_step % training_manager.replace_freq < sum(train_ids):
-                        # print(f"new opponent sampled at {global_step}")
                         opponent = training_manager.sample_opponent()
 
                     # original
@@ -386,10 +386,11 @@ if __name__ == "__main__":
             if len(next_obs > 0):
                 # merge back actions and logprobs
                 action_ = merge_actions(train_ids, action, opp_action)
-                logprob = merge_actions(train_ids, logprob, opp_logprob)
+                # masks_ = merge_actions(train_ids, next_masks, opp_mask)
+                # logprob = merge_actions(train_ids, logprob, opp_logprob)
                 insert_at_indices(actions, steps, train_ids, action)
                 insert_at_indices(logprobs, steps, train_ids, logprob)
-                insert_at_indices(masks, steps, train_ids, next_masks)
+                insert_at_indices(masks, steps, train_ids, next_mask)
             else:
                 action_ = opp_action
 
@@ -417,6 +418,7 @@ if __name__ == "__main__":
                         # print(f"global_step={global_step}, episodic_return={info['episode']['r'][i]}")
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"][i], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"][i], global_step)
+                        writer.add_scalar("charts/total_ep_length", info["episode"]["total_l"][i], global_step)
                         writer.add_scalar("charts/episodic_wins", info["episode"]["w"][i], global_step)
 
         # bootstrap value if not done
@@ -440,6 +442,7 @@ if __name__ == "__main__":
 
         # cut off the trajectories at the last step where the training agent was used
 
+        # todo add back support for framestacking
         # if args.framestack > 1:
         #     obs = torch.zeros(
         #         (args.num_steps, args.num_envs) + (np.array(envs.single_observation_space.shape).prod(),)).to(device)
@@ -454,14 +457,16 @@ if __name__ == "__main__":
         b_values = torch.zeros((n_transitions)).to(device)
 
         # flatten the batch and cut-off the trajectories
+        j = 0
         for i in range(len(steps)):
-            b_obs[:steps[i]] = obs[:steps[i], i]
-            b_logprobs[:steps[i]] = logprobs[:steps[i], i]
-            b_actions[:steps[i]] = actions[:steps[i], i]
-            b_masks[:steps[i]] = masks[:steps[i], i]
-            b_advantages[:steps[i]] = advantages[:steps[i], i]
-            b_returns[:steps[i]] = returns[:steps[i], i]
-            b_values[:steps[i]] = values[:steps[i], i]
+            j += 0 if i == 0 else steps[i - 1]
+            b_obs[j:j+steps[i]] = obs[:steps[i], i]
+            b_logprobs[j:j+steps[i]] = logprobs[:steps[i], i]
+            b_actions[j:j+steps[i]] = actions[:steps[i], i]
+            b_masks[j:j+steps[i]] = masks[:steps[i], i]
+            b_advantages[j:j+steps[i]] = advantages[:steps[i], i]
+            b_returns[j:j+steps[i]] = returns[:steps[i], i]
+            b_values[j:j+steps[i]] = values[:steps[i], i]
 
 
 
