@@ -24,28 +24,49 @@ class SelfPlayAssistant():
     Self-play assistant for PPO - handles checkpointing and opponent selection
     '''
 
-    def __init__(self):
+    def __init__(self, checkpoint_freq=int(5e3), window=10, replace_freq=int(1e3), self_play_prob=0.5, save_checkpoints=False, checkpoint_dir="~/data/PPO-SP/checkpoints/"):
         # todo manage the training agents
-        self.checkpoint_freq = int(5e5) # every 500k steps
-        self.window = 10 # number of previous checkpoints to store
-        self.replace_freq = int(5e4) # every 50k steps
-        self.self_play_prob = 0.5 # probability to play against self
+        self.checkpoint_freq = checkpoint_freq # how often we want to save a checkpoint
+        self.window = window # number of previous checkpoints to store
+        self.replace_freq = replace_freq # how often we want to replace the opponent
+        self.self_play_prob = self_play_prob # probability to play against self
         self.checkpoints = deque(maxlen=self.window)
-        self.save_checkpoints = False
+        self.save_checkpoints = save_checkpoints
+        self.checkpoint_dir = checkpoint_dir
 
-        # self.agent = agent
+        if self.save_checkpoints:
+            if not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir)
 
-    def update_pool(self, agent):
+    def update_pool(self, agent, steps):
         # return chosen checkpoints as opponents
-        self.checkpoints.append(agent.copy())
+        if self.save_checkpoints:
+            # save new checkpoint
+            checkpoint_name = os.path.join(self.checkpoint_dir, f"checkpoint_{steps}.pt")
+            torch.save(agent, checkpoint_name)
+            self.checkpoints.append(checkpoint_name)
+        else:
+            # keep it in memory
+            self.checkpoints.append(agent)
 
     def sample_opponent(self):
-        return random.choice(self.checkpoints)
+        checkpoint_id = random.randint(0, len(self.checkpoints)-1)
+        if self.save_checkpoints:
+            agent = torch.load(self.checkpoints.get(checkpoint_id))
+        else:
+            agent = self.checkpoints[checkpoint_id]
+        return agent
 
-    def add_checkpoint(self, args, agent):
-        agent_copy = PPONet(args, envs).to(device)
-        agent_copy.load_state_dict(agent.state_dict())
-        self.checkpoints.append(agent_copy)
+    def add_checkpoint(self, args, agent, step):
+        # copies agent and add it to the pool
+        # todo not necessary to copy
+        if self.save_checkpoints:
+            self.update_pool(agent, step)
+        else:
+            agent_copy = PPONet(args, envs).to(device)
+            agent_copy.load_state_dict(agent.state_dict())
+            self.update_pool(agent, step)
+        # self.checkpoints.append(agent_copy)
 
 def split_obs(obs, mask, player_id, training_id):
     """Function used to split the observation into the player's own observation and the opponent's observation."""
@@ -282,7 +303,7 @@ if __name__ == "__main__":
     # todo check if we need to modify this
     # todo WIP: add more hooks in the functions in the next iteration
     training_manager = SelfPlayAssistant()
-    training_manager.add_checkpoint(args, agent)
+    training_manager.add_checkpoint(args, agent, 0)
     opponent = training_manager.sample_opponent()
 
     # ALGO Logic: Storage setup
@@ -311,7 +332,6 @@ if __name__ == "__main__":
     num_updates = args.total_timesteps // args.batch_size
 
     # making sure that we can update it correctly
-    # todo this needs to be adjusted
     eval_freq = (args.eval_freq + (args.eval_freq % args.num_envs)) // num_updates
 
     for update in range(1, num_updates + 1):
@@ -321,7 +341,6 @@ if __name__ == "__main__":
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
-        # todo find alternative way to decide when buffer is full
         step = 0
         steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
         while step < args.num_steps:
@@ -398,8 +417,7 @@ if __name__ == "__main__":
                         writer.add_scalar("charts/episodic_wins", info["episode"]["w"][i], global_step)
 
         # bootstrap value if not done
-        # todo update starts here: we want to take the final observation where the training agent was used for acting
-        # todo take into account the steps - beyond that we want to cut the trajectory
+        # update starts here: we want to take the final observation where the training agent was used for acting
         with torch.no_grad():
             next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
@@ -529,10 +547,17 @@ if __name__ == "__main__":
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
         # evaluation
-        # todo add this back
         if global_step % eval_freq == 0:
             evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
 
+        # self play assistant admin
+        # todo we need to check when these are actually passing here
+        if global_step % training_manager.checkpoint_freq < sum(train_ids):
+            print(f"new checkpoint saved at  {global_step}")
+            training_manager.add_checkpoint(args, agent, global_step)
+        if global_step % training_manager.replace_freq < sum(train_ids):
+            print(f"new opponent sampled at {global_step}")
+            opponent = training_manager.sample_opponent()
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")
