@@ -79,7 +79,7 @@ class SelfPlayAssistant():
         else:
             agent_copy = PPONet(args, envs).to(device)
             agent_copy.load_state_dict(agent.state_dict())
-            self.update_pool(agent, step)
+            self.update_pool(agent_copy, step)
 
 def split_obs(obs, mask, filter):
     """Function used to split the observation into the player's own observation and the opponent's observation."""
@@ -135,7 +135,8 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         # stats
         episodes = 0
         total_steps = 0
-        rewards, lengths, wins = [], [], []
+        rewards, lengths, outcomes = [], [], []
+        wins, ties, losses = [], [], []
 
         start_time = time.time()
         next_obs, next_info = envs.reset()
@@ -166,16 +167,24 @@ def evaluate(args, agent, global_step, opponents=["random"]):
                     if info["_episode"][i]:
                         rewards.append(info["episode"]["r"][i])
                         lengths.append(info["episode"]["l"][i])
-                        wins.append(info["episode"]["w"][i])
+                        outcomes.append(info["episode"]["w"][i])
+                        wins.append(info["episode"]["wins"][i])
+                        ties.append(info["episode"]["ties"][i])
+                        losses.append(info["episode"]["losses"][i])
 
                         episodes += 1
+        writer.add_scalar(f"eval/{opponent}/episodic_wins", np.mean(wins), global_step)
+        writer.add_scalar(f"eval/{opponent}/episodic_ties", np.mean(ties), global_step)
+        writer.add_scalar(f"eval/{opponent}/episodic_losses", np.mean(losses), global_step)
 
         writer.add_scalar(f"eval/{opponent}/mean_return", np.mean(rewards), global_step)
         writer.add_scalar(f"eval/{opponent}/mean_length", np.mean(lengths), global_step)
-        writer.add_scalar(f"eval/{opponent}/win_rate", np.mean(wins), global_step)
+        writer.add_scalar(f"eval/{opponent}/outcome", np.mean(outcomes), global_step)
         writer.add_scalar(f"eval/{opponent}/std_return", np.std(rewards), global_step)
         writer.add_scalar(f"eval/{opponent}/std_length", np.std(lengths), global_step)
         writer.add_scalar(f"eval/{opponent}/SPS", int(total_steps / (time.time() - start_time)), global_step)
+
+
 
 
 def parse_args():
@@ -248,8 +257,12 @@ def parse_args():
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)
 
-    # todo self-play args
-
+    # self-play args
+    parser.add_argument("--sp-checkpoint-freq", type=int, default=int(5e4))
+    parser.add_argument("--sp-window", type=int, default=10, help="Number of checkpoints to store in memory")
+    parser.add_argument("--sp-replace-freq", type=int, default=int(1e4), help="How often to replace the opponent")
+    parser.add_argument("--sp-recent-prob", type=float, default=0.7, help="Probability of playing against most recent checkpoint")
+    parser.add_argument("--sp-save-checkpoints", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True, help="Whether to save checkpoints to disk instead of keeping them in memory")
 
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
@@ -314,8 +327,10 @@ if __name__ == "__main__":
     agent = PPONet(args, envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    # training_manager = SelfPlayAssistant(window=1, checkpoint_freq=int(1e7), replace_freq=int(1e7))
-    training_manager = SelfPlayAssistant(window=10, checkpoint_freq=int(5e4), replace_freq=int(1e4))
+    training_manager = SelfPlayAssistant(window=args.sp_window, checkpoint_freq=args.sp_checkpoint_freq,
+                                         replace_freq=args.sp_replace_freq, self_play_prob=args.sp_recent_prob,
+                                         save_checkpoints=args.sp_save_checkpoints, seed=args.seed)
+    # add and "sample" the first checkpoint
     training_manager.add_checkpoint(args, agent, 0)
     opponent = training_manager.sample_opponent()
 
@@ -432,10 +447,14 @@ if __name__ == "__main__":
                 for i in range(args.num_envs):
                     if info["_episode"][i]:
                         # print(f"global_step={global_step}, episodic_return={info['episode']['r'][i]}")
+                        writer.add_scalar("charts/episodic_wins", info["episode"]["wins"][i], global_step)
+                        writer.add_scalar("charts/episodic_ties", info["episode"]["ties"][i], global_step)
+                        writer.add_scalar("charts/episodic_losses", info["episode"]["losses"][i], global_step)
+
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"][i], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"][i], global_step)
                         writer.add_scalar("charts/total_ep_length", info["episode"]["total_l"][i], global_step)
-                        writer.add_scalar("charts/episodic_wins", info["episode"]["w"][i], global_step)
+                        writer.add_scalar("charts/episodic_outcomes", info["episode"]["w"][i], global_step) # [-1, 1]
 
         # bootstrap value if not done
         # update starts here: we want to take the final observation where the training agent was used for acting

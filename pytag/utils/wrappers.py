@@ -206,15 +206,19 @@ class RecordEpisodeStatistics(gym.Wrapper):
                     "Attempted to add episode stats when they already exist"
                 )
             else:
+                outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
                 infos["episode"] = {
                     "r": np.where(dones, self.episode_returns, 0.0),
                     "l": np.where(dones, self.episode_lengths, 0),
-                    "w": [0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]],
+                    "w": outcomes,
                     "t": np.where(
                         dones,
                         np.round(time.perf_counter() - self.episode_start_times, 6),
                         0.0,
                     ),
+                    "wins": np.where(outcomes == 1.0, 1.0, 0.0),
+                    "losses": np.where(outcomes == -1.0, 1.0, 0.0),
+                    "ties": np.where(outcomes == 0, 1.0, 0.0),
                 }
                 if self.is_vector_env:
                     infos["_episode"] = np.where(dones, True, False)
@@ -299,16 +303,20 @@ class RecordSelfPlayEpStats(gym.Wrapper):
                     "Attempted to add episode stats when they already exist"
                 )
             else:
+                outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
                 infos["episode"] = {
                     "r": np.where(dones, self.episode_returns, 0.0),
                     "l": np.where(dones, self.episode_lengths, 0),
                     "total_l": np.where(dones, self.total_lenghts, 0),
-                    "w": [0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]],
+                    "w": outcomes,
                     "t": np.where(
                         dones,
                         np.round(time.perf_counter() - self.episode_start_times, 6),
                         0.0,
                     ),
+                    "wins": np.where(outcomes == 1.0, 1.0, 0.0),
+                    "losses": np.where(outcomes == -1.0, 1.0, 0.0),
+                    "ties": np.where(outcomes == 0, 1.0, 0.0),
                 }
                 if self.is_vector_env:
                     infos["_episode"] = np.where(dones, True, False)
