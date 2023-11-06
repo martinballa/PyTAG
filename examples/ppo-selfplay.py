@@ -22,24 +22,30 @@ from examples.utils.networks import PPONet
 class SelfPlayAssistant():
     '''
     Self-play assistant for PPO - handles checkpointing and opponent selection
+
     '''
 
-    def __init__(self, checkpoint_freq=int(5e3), window=10, replace_freq=int(1e3), self_play_prob=0.5, save_checkpoints=False, checkpoint_dir="~/data/PPO-SP/checkpoints/"):
-        # todo manage the training agents
+    def __init__(self, checkpoint_freq=int(5e3), window=10, replace_freq=int(1e3), self_play_prob=0.7, save_checkpoints=False, checkpoint_dir="~/data/PPO-SP/checkpoints/", seed=None):
         self.checkpoint_freq = checkpoint_freq # how often we want to save a checkpoint
         self.window = window # number of previous checkpoints to store
         self.replace_freq = replace_freq # how often we want to replace the opponent
         self.self_play_prob = self_play_prob # probability to play against self
         self.checkpoints = deque(maxlen=self.window)
+        self.save_steps = deque(maxlen=self.window)
         self.save_checkpoints = save_checkpoints
         self.checkpoint_dir = checkpoint_dir
+        if not seed:
+            seed = random.randint(0, 100000)
+        self.seed = seed
+        self.rnd = random.Random(seed)
 
+        # create directory structure for saving checkpoints
         if self.save_checkpoints:
             if not os.path.exists(checkpoint_dir):
                 os.makedirs(checkpoint_dir)
 
     def update_pool(self, agent, steps):
-        # return chosen checkpoints as opponents
+        # return sampled checkpoints as opponents
         if self.save_checkpoints:
             # save new checkpoint
             checkpoint_name = os.path.join(self.checkpoint_dir, f"checkpoint_{steps}.pt")
@@ -48,9 +54,15 @@ class SelfPlayAssistant():
         else:
             # keep it in memory
             self.checkpoints.append(agent)
+        self.save_steps.append(steps)
 
     def sample_opponent(self):
-        checkpoint_id = random.randint(0, len(self.checkpoints)-1)
+        if self.rnd.random() < self.self_play_prob:
+            # choose the last ID
+            checkpoint_id = len(self.checkpoints) -1
+        else:
+            checkpoint_id = self.rnd.randint(0, len(self.checkpoints)-1)
+        print(f"sampled opponent {checkpoint_id} from timestep {self.save_steps[checkpoint_id]}")
         if self.save_checkpoints:
             agent = torch.load(self.checkpoints.get(checkpoint_id))
         else:
@@ -59,19 +71,19 @@ class SelfPlayAssistant():
 
     def add_checkpoint(self, args, agent, step):
         # copies agent and add it to the pool
-        # todo not necessary to copy
+        # in case of step coming as a torch tensor we need to detach it
+        if isinstance(step, torch.Tensor):
+            step = step.item()
         if self.save_checkpoints:
             self.update_pool(agent, step)
         else:
             agent_copy = PPONet(args, envs).to(device)
             agent_copy.load_state_dict(agent.state_dict())
             self.update_pool(agent, step)
-        # self.checkpoints.append(agent_copy)
 
-def split_obs(obs, mask, player_id, training_id):
+def split_obs(obs, mask, filter):
     """Function used to split the observation into the player's own observation and the opponent's observation."""
     # Only used for acting - during optimisation we only work from our agent's point of view
-    filter = (player_id == training_id)
     obs_filter = filter.unsqueeze(-1).repeat(1, obs.shape[-1])
     mask_filter = filter.unsqueeze(-1).repeat(1, mask.shape[-1])
 
@@ -94,11 +106,10 @@ def merge_actions(train_ids, actions, opp_actions):
 
 
 def insert_at_indices(buffer, global_step, indices, values):
-    # inserts values into tensor at indices - modifies buffer directly
-    # mainly used to populate the tensors during training with each env's corresponding transitions
-    # buffer is [Batch, num-envs, ...]
+    # modifies buffer directly - inserts values into tensor at indices
+    # used to populate the tensors during training with each env's corresponding transitions
+    # buffer is [Batch, num-envs, ...]; note that len(indices) >= len(values)
     j = 0
-    # note that len(indices) >= len(values)
     for i in range(len(indices)):
         if indices[i]:
             buffer[global_step[i], i] = values[j]
@@ -236,6 +247,10 @@ def parse_args():
     parser.add_argument("--n-players", type=int, default=2,
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)
+
+    # todo self-play args
+
+
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -299,7 +314,8 @@ if __name__ == "__main__":
     agent = PPONet(args, envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    training_manager = SelfPlayAssistant(checkpoint_freq=int(1e6), replace_freq=int(5e5))
+    # training_manager = SelfPlayAssistant(window=1, checkpoint_freq=int(1e7), replace_freq=int(1e7))
+    training_manager = SelfPlayAssistant(window=10, checkpoint_freq=int(5e4), replace_freq=int(1e4))
     training_manager.add_checkpoint(args, agent, 0)
     opponent = training_manager.sample_opponent()
 
@@ -352,7 +368,7 @@ if __name__ == "__main__":
             action = opp_action = torch.zeros(0) # just a placeholder
             logprob = opp_logprob = torch.zeros(0)
             with torch.no_grad():
-                (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, player_id, learning_id)
+                (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
                 if len(next_obs > 0):
                     # global step only counts where our training agent is acting
                     global_step += sum(train_ids)
@@ -427,7 +443,9 @@ if __name__ == "__main__":
             next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            for t in reversed(range(args.num_steps - 1)):
+            # last step is not observed (128) and for bootstrapping we need 127
+            # the last step is used with t+1, so we are not losing anything
+            for t in reversed(range(args.num_steps - 2)):
                 # with (steps > t).int() we filter out the incorrect values
                 # last obs is rarely for the last acting player
                 # if t == args.num_steps - 1:
