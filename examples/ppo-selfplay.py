@@ -357,20 +357,17 @@ if __name__ == "__main__":
     learning_id = torch.from_numpy(next_info["learning_player"]).to(device)
     player_id = torch.from_numpy(next_info["player_id"]).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
-    num_updates = args.total_timesteps // args.batch_size
 
-    # making sure that we can update it correctly
-    eval_freq = (args.eval_freq + (args.eval_freq % args.num_envs)) // num_updates
+    step = 0
+    steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
+    while global_step < args.total_timesteps:
 
-    for update in range(1, num_updates + 1):
-        # Annealing the rate if instructed to do so.
         if args.anneal_lr:
-            frac = 1.0 - (update - 1.0) / num_updates
+            # Annealing the rate if instructed to do so.
+            frac = 1.0 - (global_step - 1.0) / args.total_timesteps
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
-        step = 0
-        steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
         while step < args.num_steps:
             # note that step is max(steps) so if any of the envs reach step we stop! - we don't wait to fill up all the transitions
             train_ids = (learning_id == player_id).int()
@@ -386,7 +383,7 @@ if __name__ == "__main__":
                 (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
                 if len(next_obs > 0):
                     # global step only counts where our training agent is acting
-                    global_step += sum(train_ids)
+                    global_step += sum(train_ids).item()
 
                     # self play assistant admin - we
                     if global_step % training_manager.checkpoint_freq < sum(train_ids):
@@ -455,6 +452,13 @@ if __name__ == "__main__":
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"][i], global_step)
                         writer.add_scalar("charts/total_ep_length", info["episode"]["total_l"][i], global_step)
                         writer.add_scalar("charts/episodic_outcomes", info["episode"]["w"][i], global_step) # [-1, 1]
+
+            # evaluation
+            # if global_step % eval_freq == 0:
+            # if we have just passed this point then we evaluate
+            with torch.no_grad():
+                if global_step % args.eval_freq <= sum(train_ids).item():
+                    evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
 
         # bootstrap value if not done
         # update starts here: we want to take the final observation where the training agent was used for acting
@@ -591,9 +595,11 @@ if __name__ == "__main__":
         # print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-        # evaluation
-        if global_step % eval_freq == 0:
-            evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
+
+
+        # reset counters
+        step = 0
+        steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")
