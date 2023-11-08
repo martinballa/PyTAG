@@ -247,7 +247,7 @@ class RecordSelfPlayEpStats(gym.Wrapper):
     the episode statistics.
     """
 
-    def __init__(self, env: gym.Env, deque_size: int = 100):
+    def __init__(self, env: gym.Env):
         """This wrapper will keep track of cumulative rewards and episode lengths.
 
         Args:
@@ -261,9 +261,7 @@ class RecordSelfPlayEpStats(gym.Wrapper):
         self.episode_returns: Optional[np.ndarray] = None
         self.episode_lengths: Optional[np.ndarray] = None
         self.episode_wins: Optional[np.ndarray] = None
-        self.return_queue = deque(maxlen=deque_size)
-        self.length_queue = deque(maxlen=deque_size)
-        self.win_queue = deque(maxlen=deque_size)
+        self.total_lenghts: Optional[np.ndarray] = None
         self.is_vector_env = getattr(env, "is_vector_env", False)
 
     def reset(self, **kwargs):
@@ -290,12 +288,12 @@ class RecordSelfPlayEpStats(gym.Wrapper):
         assert isinstance(
             infos, dict
         ), f"`info` dtype is {type(infos)} while supported dtype is `dict`. This may be due to usage of other wrappers in the wrong order."
-        learner_stats = infos["player_id"] == infos["learning_player"]
-        self.episode_returns += rewards * learner_stats
-        self.episode_lengths += np.ones(len(rewards), dtype=int) * learner_stats
+        update_idx = infos["player_id"] == infos["learning_player"]
+        self.episode_returns += rewards * update_idx
+        self.episode_lengths += update_idx
         self.total_lenghts += 1
-        self.episode_wins += infos["has_won"] * learner_stats
-        dones = np.logical_or(terminations * learner_stats, truncations)
+        self.episode_wins += infos["has_won"] * update_idx
+        dones = np.logical_or(terminations, truncations)
         num_dones = np.sum(dones)
         if num_dones:
             if "episode" in infos or "_episode" in infos:
@@ -320,8 +318,6 @@ class RecordSelfPlayEpStats(gym.Wrapper):
                 }
                 if self.is_vector_env:
                     infos["_episode"] = np.where(dones, True, False)
-            self.return_queue.extend(self.episode_returns[dones])
-            self.length_queue.extend(self.episode_lengths[dones])
             self.episode_count += num_dones
             self.episode_lengths[dones] = 0
             self.episode_returns[dones] = 0

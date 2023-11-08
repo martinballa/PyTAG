@@ -214,8 +214,8 @@ class SelfPlayPyTAG(PyTAG):
             done = True
             info = {"action_mask": self._last_action_mask,
                     "has_won": int(self.terminal_reward(learnerId))}
-            info["player_id"] = self.getLearnerID()
-            info["learning_player"] = self.getLearnerID()
+            info["player_id"] = learnerId
+            info["learning_player"] = learnerId
             return obs, reward, done, info
 
         obs, rewards, done, info = super().step(action)
