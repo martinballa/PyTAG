@@ -357,6 +357,8 @@ if __name__ == "__main__":
     learning_id = torch.from_numpy(next_info["learning_player"]).to(device)
     player_id = torch.from_numpy(next_info["player_id"]).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
+    train_ids = (learning_id == player_id).int()
+    prev_learn_idx = learning_id
 
     step = 0
     steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
@@ -370,7 +372,7 @@ if __name__ == "__main__":
 
         while step < args.num_steps:
             # note that step is max(steps) so if any of the envs reach step we stop! - we don't wait to fill up all the transitions
-            train_ids = (learning_id == player_id).int()
+            # train_ids = (learning_id == player_id).int()
 
             # step is not a scalar value - but rather trajectory length for each training agent
             #   approach: split and merge observations depending on who needs to act
@@ -427,11 +429,13 @@ if __name__ == "__main__":
             # merge the actions back together
             next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
-            learning_id = torch.from_numpy(info["learning_player"]).to(device)
-            player_id = torch.from_numpy(info["player_id"]).to(device)
+
             # todo check on reward - need to make sure that it belong to the current player
             # rewards[step] = torch.tensor(reward).to(device).view(-1) # todo check when we need to save the action!
-            insert_at_indices(rewards, steps, train_ids, torch.tensor(reward).to(device).view(-1))
+            reward = torch.tensor(reward).to(device)
+            # print(f"reward = {reward} and is training = {train_ids} and prev train idx = {prev_train_idx}")
+            # todo check on this - it may work as only the last step, which is the reward is off
+            insert_at_indices(rewards, steps, (prev_learn_idx == torch.from_numpy(done)).int(), reward)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
             if args.framestack > 1:
                 next_obs = next_obs.view(next_obs.shape[0], -1)
@@ -439,6 +443,11 @@ if __name__ == "__main__":
             # keep track of the steps
             steps += train_ids
             step = steps.max()
+            prev_learn_id = learning_id
+
+            learning_id = torch.from_numpy(info["learning_player"]).to(device)
+            player_id = torch.from_numpy(info["player_id"]).to(device)
+            train_ids = (learning_id == player_id).int()
 
             if "episode" in info:
                 for i in range(args.num_envs):
