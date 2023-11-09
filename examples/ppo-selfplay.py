@@ -109,11 +109,12 @@ def insert_at_indices(buffer, global_step, indices, values):
     # modifies buffer directly - inserts values into tensor at indices
     # used to populate the tensors during training with each env's corresponding transitions
     # buffer is [Batch, num-envs, ...]; note that len(indices) >= len(values)
-    j = 0
-    for i in range(len(indices)):
-        if indices[i]:
-            buffer[global_step[i], i] = values[j]
-            j += 1
+    if len(values) > 0:
+        j = 0
+        for i in range(len(indices)):
+            if indices[i]:
+                buffer[global_step[i], i] = values[j]
+                j += 1
 
 
 def evaluate(args, agent, global_step, opponents=["random"]):
@@ -358,7 +359,7 @@ if __name__ == "__main__":
     player_id = torch.from_numpy(next_info["player_id"]).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     train_ids = (learning_id == player_id).int()
-    prev_learn_idx = learning_id
+    prev_train_idx = train_ids
 
     step = 0
     steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
@@ -424,18 +425,17 @@ if __name__ == "__main__":
             else:
                 action_ = opp_action
 
-            # print(f"player id before step {player_id} and {learning_id}")
-            # TRY NOT TO MODIFY: execute the game and log data.
             # merge the actions back together
             next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
-
-            # todo check on reward - need to make sure that it belong to the current player
-            # rewards[step] = torch.tensor(reward).to(device).view(-1) # todo check when we need to save the action!
             reward = torch.tensor(reward).to(device)
-            # print(f"reward = {reward} and is training = {train_ids} and prev train idx = {prev_train_idx}")
-            # todo check on this - it may work as only the last step, which is the reward is off
-            insert_at_indices(rewards, steps, (prev_learn_idx == torch.from_numpy(done)).int(), reward)
+
+            # due to the vec env the player ids are resampled at the next episode - so we need the previous player id
+            # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
+            insert_at_indices(rewards, steps-1, torch.from_numpy(done).int() == prev_train_idx, reward)
+            # when we win - we get reward instantly
+            insert_at_indices(rewards, steps, train_ids, reward)
+
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
             if args.framestack > 1:
                 next_obs = next_obs.view(next_obs.shape[0], -1)
@@ -443,7 +443,8 @@ if __name__ == "__main__":
             # keep track of the steps
             steps += train_ids
             step = steps.max()
-            prev_learn_id = learning_id
+            # todo prev_train_idx might be an issue with 2+ players as it may take multiple steps to get back to the training agent
+            prev_train_idx = train_ids
 
             learning_id = torch.from_numpy(info["learning_player"]).to(device)
             player_id = torch.from_numpy(info["player_id"]).to(device)

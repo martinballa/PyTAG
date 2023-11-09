@@ -206,29 +206,44 @@ class SelfPlayPyTAG(PyTAG):
         return obs, info
 
     def step(self, action):
-        if self._done:
-            # "fake" step to give the last observation and reward to the learning player
-            learnerId = self.getLearnerID()
-            obs = self._last_obs_vector
-            reward = self.terminal_reward(learnerId)
-            done = True
-            info = {"action_mask": self._last_action_mask,
-                    "has_won": int(self.terminal_reward(learnerId))}
-            info["player_id"] = learnerId
-            info["learning_player"] = learnerId
-            return obs, reward, done, info
+        # if self._done:
+        #     # "fake" step to give the last observation and reward to the learning player
+        #     learnerId = self.getLearnerID()
+        #     obs = self._last_obs_vector
+        #     reward = self.terminal_reward(learnerId)
+        #     done = True
+        #     info = {"action_mask": self._last_action_mask,
+        #             "has_won": int(self.terminal_reward(learnerId))}
+        #     info["player_id"] = learnerId
+        #     info["learning_player"] = learnerId
+        #     return obs, reward, done, info
+        # print(f"player_id before update {self.getPlayerID()}")
+        # print(f"player id = {self.getPlayerID()} and learning player = {self.getLearnerID()}")
+        # print(f"action = {action}")
+        # print(f"obs = \n{self._last_obs_vector.reshape(3, 3)}")
 
         obs, rewards, done, info = super().step(action)
         info["player_id"] = self.getPlayerID()
         info["learning_player"] = self.getLearnerID()
+        # rewards = 0.0 # only the learning player gets rewards
         # different player may have different dones
-        if done:
-            # we only want to make sure that the training player gets its final observation
-            if self.getPlayerID() != self.getLearnerID():
-                self._done = True
-                done = False # make sure that we don't reset env too early
+        # if done:
+        #     # we only want to make sure that the training player gets its final observation
+        #     if self.getPlayerID() != self.getLearnerID():
+        #         self._done = True
+        #         done = False # make sure that we don't reset env too early
                 # cache and give everyone the last observation with their corresponding rewards
-                rewards = self.terminal_reward(self.getPlayerID())
+        # only learner player gets rewards
+        # print(f"original rewards = {rewards}")
+        rewards = self.terminal_reward(self.player_mapping[self._learner_id])
+
+
+
+        # print("------------- Transitioning to next -------------")
+        # print(f"player id = {self.getPlayerID()} and learning player = {self.getLearnerID()}")
+        # print(f"last action = {action}")
+        # print(f"obs = \n{obs.reshape(3, 3)}")
+        # print(f"rewards = {rewards} \n\n")
 
         return obs, rewards, done, info
 
