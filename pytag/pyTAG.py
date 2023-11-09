@@ -97,7 +97,8 @@ class PyTAG():
             valid_actions = np.where(self._last_action_mask)[0]
             action = self._rnd.choice(valid_actions)
             self._java_env.step(action)
-            # reward = -1
+            print("invalid action")
+            reward = -1
         else:
             self._java_env.step(action)
             # reward = self.has_won(self._playerID)

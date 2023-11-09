@@ -150,7 +150,6 @@ def evaluate(args, agent, global_step, opponents=["random"]):
             total_steps += 1 * args.num_envs
 
             with torch.no_grad():
-                # next_obs_, next_masks_ = split_obs(next_obs, next_masks)
                 # all actions are for our agent
                 action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
 
@@ -184,9 +183,6 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         writer.add_scalar(f"eval/{opponent}/std_return", np.std(rewards), global_step)
         writer.add_scalar(f"eval/{opponent}/std_length", np.std(lengths), global_step)
         writer.add_scalar(f"eval/{opponent}/SPS", int(total_steps / (time.time() - start_time)), global_step)
-
-
-
 
 def parse_args():
     # fmt: off
@@ -316,10 +312,6 @@ if __name__ == "__main__":
     envs = gym.vector.SyncVectorEnv(
         [make_sp_env(args.env_id, args.seed + i, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type) for i in range(args.num_envs)]
     )
-    # envs = SyncVectorEnv([
-    #     lambda: StrategoWrapper(gym.make(args.env_id))
-    #     for i in range(args.num_envs)
-    # ])
     # For environments in which the action-masks align (aka same amount of actions)
     # This wrapper will merge them all into one numpy array, instead of having an array of arrays
     envs = MergeActionMaskWrapper(envs)
@@ -359,7 +351,7 @@ if __name__ == "__main__":
     player_id = torch.from_numpy(next_info["player_id"]).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     train_ids = (learning_id == player_id).int()
-    prev_train_idx = train_ids
+    prev_train_idx = learning_id
 
     step = 0
     steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
@@ -373,11 +365,9 @@ if __name__ == "__main__":
 
         while step < args.num_steps:
             # note that step is max(steps) so if any of the envs reach step we stop! - we don't wait to fill up all the transitions
-            # train_ids = (learning_id == player_id).int()
-
             # step is not a scalar value - but rather trajectory length for each training agent
-            #   approach: split and merge observations depending on who needs to act
-            #   update step and the trajectories where training_id is not zero
+            # approach: split and merge observations depending on who needs to act
+            # update step and the trajectories where training_id is not zero
 
             # ALGO LOGIC: action logic
             action = opp_action = torch.zeros(0) # just a placeholder
@@ -394,12 +384,6 @@ if __name__ == "__main__":
                     if global_step % training_manager.replace_freq < sum(train_ids):
                         opponent = training_manager.sample_opponent()
 
-                    # original
-                    # obs[step] = next_obs
-                    # dones[step] = next_done
-                    # action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
-                    # values[step] = value.flatten()
-
                     # modified
                     insert_at_indices(obs, steps, train_ids, next_obs)
                     insert_at_indices(dones, steps, train_ids, next_done)
@@ -408,17 +392,10 @@ if __name__ == "__main__":
                 if (len(opp_obs > 0)):
                     opp_action, opp_logprob, _, value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
-            # if len(next_obs > 0):
-            # actions[step] = action
-            # masks[step] = next_masks
-            # logprobs[step] = logprob
-
             # modified
             if len(next_obs > 0):
                 # merge back actions and logprobs
                 action_ = merge_actions(train_ids, action, opp_action)
-                # masks_ = merge_actions(train_ids, next_masks, opp_mask)
-                # logprob = merge_actions(train_ids, logprob, opp_logprob)
                 insert_at_indices(actions, steps, train_ids, action)
                 insert_at_indices(logprobs, steps, train_ids, logprob)
                 insert_at_indices(masks, steps, train_ids, next_mask)
@@ -431,10 +408,10 @@ if __name__ == "__main__":
             reward = torch.tensor(reward).to(device)
 
             # due to the vec env the player ids are resampled at the next episode - so we need the previous player id
-            # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
-            insert_at_indices(rewards, steps-1, torch.from_numpy(done).int() == prev_train_idx, reward)
             # when we win - we get reward instantly
             insert_at_indices(rewards, steps, train_ids, reward)
+            # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
+            insert_at_indices(rewards, steps-1, torch.from_numpy(done).int() == prev_train_idx, reward)
 
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
             if args.framestack > 1:
@@ -443,8 +420,7 @@ if __name__ == "__main__":
             # keep track of the steps
             steps += train_ids
             step = steps.max()
-            # todo prev_train_idx might be an issue with 2+ players as it may take multiple steps to get back to the training agent
-            prev_train_idx = train_ids
+            prev_train_idx = learning_id
 
             learning_id = torch.from_numpy(info["learning_player"]).to(device)
             player_id = torch.from_numpy(info["player_id"]).to(device)
@@ -453,7 +429,6 @@ if __name__ == "__main__":
             if "episode" in info:
                 for i in range(args.num_envs):
                     if info["_episode"][i]:
-                        # print(f"global_step={global_step}, episodic_return={info['episode']['r'][i]}")
                         writer.add_scalar("charts/episodic_wins", info["episode"]["wins"][i], global_step)
                         writer.add_scalar("charts/episodic_ties", info["episode"]["ties"][i], global_step)
                         writer.add_scalar("charts/episodic_losses", info["episode"]["losses"][i], global_step)
@@ -463,8 +438,6 @@ if __name__ == "__main__":
                         writer.add_scalar("charts/total_ep_length", info["episode"]["total_l"][i], global_step)
                         writer.add_scalar("charts/episodic_outcomes", info["episode"]["w"][i], global_step) # [-1, 1]
 
-            # evaluation
-            # if global_step % eval_freq == 0:
             # if we have just passed this point then we evaluate
             with torch.no_grad():
                 if global_step % args.eval_freq <= sum(train_ids).item():
