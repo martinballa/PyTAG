@@ -14,7 +14,6 @@ import torch.optim as optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-from pytag import gym_wrapper
 from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics, RecordSelfPlayEpStats
 from pytag.utils.common import make_env, make_sp_env
 from examples.utils.networks import PPONet
@@ -349,7 +348,6 @@ if __name__ == "__main__":
     next_masks = torch.from_numpy(next_info["action_mask"]).to(device)
     learning_id = torch.from_numpy(next_info["learning_player"]).to(device)
     player_id = torch.from_numpy(next_info["player_id"]).to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
     train_ids = (learning_id == player_id).int()
     prev_train_idx = learning_id
 
@@ -378,42 +376,47 @@ if __name__ == "__main__":
                     # global step only counts where our training agent is acting
                     global_step += sum(train_ids).item()
 
-                    # self play assistant admin - we
-                    if global_step % training_manager.checkpoint_freq < sum(train_ids):
-                        training_manager.add_checkpoint(args, agent, global_step)
-                    if global_step % training_manager.replace_freq < sum(train_ids):
-                        opponent = training_manager.sample_opponent()
-
-                    # modified
+                    # self-play agent acting
                     insert_at_indices(obs, steps, train_ids, next_obs)
-                    insert_at_indices(dones, steps, train_ids, next_done)
                     action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
                     insert_at_indices(values, steps, train_ids, value.flatten())
                 if (len(opp_obs > 0)):
                     opp_action, opp_logprob, _, value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
-            # modified
-            if len(next_obs > 0):
-                # merge back actions and logprobs
-                action_ = merge_actions(train_ids, action, opp_action)
-                insert_at_indices(actions, steps, train_ids, action)
-                insert_at_indices(logprobs, steps, train_ids, logprob)
-                insert_at_indices(masks, steps, train_ids, next_mask)
-            else:
-                action_ = opp_action
+                # self-play admin
+                if global_step % training_manager.checkpoint_freq < sum(train_ids):
+                    training_manager.add_checkpoint(args, agent, global_step)
+                if global_step % training_manager.replace_freq < sum(train_ids):
+                    opponent = training_manager.sample_opponent()
+
+                # modified
+                if len(next_obs > 0):
+                    # merge back actions and logprobs
+                    action_ = merge_actions(train_ids, action, opp_action)
+                    insert_at_indices(actions, steps, train_ids, action)
+                    insert_at_indices(logprobs, steps, train_ids, logprob)
+                    insert_at_indices(masks, steps, train_ids, next_mask)
+                else:
+                    action_ = opp_action
 
             # merge the actions back together
             next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
+
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
             reward = torch.tensor(reward).to(device)
+            done = torch.Tensor(done).to(device)
 
             # due to the vec env the player ids are resampled at the next episode - so we need the previous player id
             # when we win - we get reward instantly
             insert_at_indices(rewards, steps, train_ids, reward)
-            # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
-            insert_at_indices(rewards, steps-1, torch.from_numpy(done).int() == prev_train_idx, reward)
+            insert_at_indices(dones, steps, train_ids, done)
 
-            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
+            # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
+            # note that only the learning player gets reward from the SP env
+            insert_at_indices(rewards, steps-1, torch.logical_and(done, ~train_ids.bool()).int(), reward)
+            insert_at_indices(dones, steps-1, torch.logical_and(done, ~train_ids.bool()).int(), done)
+
+            next_obs = torch.Tensor(next_obs).to(device)
             if args.framestack > 1:
                 next_obs = next_obs.view(next_obs.shape[0], -1)
 
@@ -446,25 +449,17 @@ if __name__ == "__main__":
         # bootstrap value if not done
         # update starts here: we want to take the final observation where the training agent was used for acting
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
             # last step is not observed (128) and for bootstrapping we need 127
             # the last step is used with t+1, so we are not losing anything
             for t in reversed(range(args.num_steps - 2)):
                 # with (steps > t).int() we filter out the incorrect values
-                # last obs is rarely for the last acting player
-                # if t == args.num_steps - 1:
-                #     nextnonterminal = 1.0 - next_done
-                #     nextvalues = next_value * (steps > t).int()
-                # else:
                 nextnonterminal = 1.0 - dones[t + 1]
                 nextvalues = values[t + 1] * (steps > t).int()
                 delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + values
-
-        # cut off the trajectories at the last step where the training agent was used
 
         # todo add back support for framestacking
         # if args.framestack > 1:
@@ -491,20 +486,6 @@ if __name__ == "__main__":
             b_advantages[j:j+steps[i]] = advantages[:steps[i], i]
             b_returns[j:j+steps[i]] = returns[:steps[i], i]
             b_values[j:j+steps[i]] = values[:steps[i], i]
-
-
-
-        # flatten the batch
-        # if args.framestack > 1:
-        #     b_obs = obs.reshape((-1,) + ((np.array(envs.single_observation_space.shape)).prod(),))
-        # else:
-        #     b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        # b_logprobs = logprobs.reshape(-1)
-        # b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        # b_masks = masks.reshape((-1,) + (envs.single_action_space.n, ))
-        # b_advantages = advantages.reshape(-1)
-        # b_returns = returns.reshape(-1)
-        # b_values = values.reshape(-1)
 
         # Optimizing the policy and value network
         b_inds = np.arange(n_transitions)

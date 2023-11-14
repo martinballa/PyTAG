@@ -101,9 +101,7 @@ class PyTAG():
             reward = -1
         else:
             self._java_env.step(action)
-            # reward = self.has_won(self._playerID)
             reward = self.terminal_reward(self._playerID)
-            # if str(self._java_env.getPlayerResults()[self._playerID]) == "LOSE_GAME": reward = -1
 
         self._update_data()
         done = self._java_env.isDone()
@@ -185,39 +183,29 @@ class SelfPlayPyTAG(PyTAG):
         super().__init__(["python"]*n_players, game_id, seed, obs_type)
         # the training agent always gets our internal ID representation not the ids coming from the env directly
         self._learner_id = 0
+        self.n_players = n_players
         self.player_mapping = [i for i in range(n_players)]
-        self._done = False
 
-    def getPlayerID(self):
-        # due to the randomisation of the player ids, we need to map the player id to the correct player
-        playerID = super().getPlayerID()
-        return self.player_mapping[playerID]
+    # def getPlayerID(self):
+    #     # due to the randomisation of the player ids, we need to map the player id to the correct player
+    #     playerID = super().getPlayerID()
+    #     return self.player_mapping[playerID]
 
     def getLearnerID(self):
-        return self._learner_id
+        return self._playerID
+        # return self._learner_id
 
     def reset(self):
         obs, info = super().reset()
-        self._done = False
-        self._rnd.shuffle(self.player_mapping)
-        self._learner_id = self._rnd.choice(self.player_mapping)
+        self._playerID = self._rnd.randint(0, self.n_players-1)
+        # self._rnd.shuffle(self.player_mapping)
+        # self._learner_id = self._rnd.choice(self.player_mapping)
+        # self._playerID = self.player_mapping[self._learner_id]
         info["player_id"] = self.getPlayerID()
         info["learning_player"] = self.getLearnerID()
-        # info["learning_player"] = self.player_mapping[self._learner_id] #.index(self._learner_id)
         return obs, info
 
     def step(self, action):
-        # if self._done:
-        #     # "fake" step to give the last observation and reward to the learning player
-        #     learnerId = self.getLearnerID()
-        #     obs = self._last_obs_vector
-        #     reward = self.terminal_reward(learnerId)
-        #     done = True
-        #     info = {"action_mask": self._last_action_mask,
-        #             "has_won": int(self.terminal_reward(learnerId))}
-        #     info["player_id"] = learnerId
-        #     info["learning_player"] = learnerId
-        #     return obs, reward, done, info
         # print(f"player_id before update {self.getPlayerID()}")
         # print(f"player id = {self.getPlayerID()} and learning player = {self.getLearnerID()}")
         # print(f"action = {action}")
@@ -226,19 +214,11 @@ class SelfPlayPyTAG(PyTAG):
         obs, rewards, done, info = super().step(action)
         info["player_id"] = self.getPlayerID()
         info["learning_player"] = self.getLearnerID()
-        # rewards = 0.0 # only the learning player gets rewards
-        # different player may have different dones
-        # if done:
-        #     # we only want to make sure that the training player gets its final observation
-        #     if self.getPlayerID() != self.getLearnerID():
-        #         self._done = True
-        #         done = False # make sure that we don't reset env too early
-                # cache and give everyone the last observation with their corresponding rewards
+        # info["has_won"] = int(self.terminal_reward(self.player_mapping[self._learner_id]))
+
         # only learner player gets rewards
-        # print(f"original rewards = {rewards}")
-        rewards = self.terminal_reward(self.player_mapping[self._learner_id])
-
-
+        rewards = self.terminal_reward(self._playerID)
+        # rewards = self.terminal_reward(self.player_mapping[self._learner_id])
 
         # print("------------- Transitioning to next -------------")
         # print(f"player id = {self.getPlayerID()} and learning player = {self.getLearnerID()}")
