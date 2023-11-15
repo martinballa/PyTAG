@@ -83,11 +83,32 @@ class SelfPlayAssistant():
 def split_obs(obs, mask, filter):
     """Function used to split the observation into the player's own observation and the opponent's observation."""
     # Only used for acting - during optimisation we only work from our agent's point of view
-    obs_filter = filter.unsqueeze(-1).repeat(1, obs.shape[-1])
-    mask_filter = filter.unsqueeze(-1).repeat(1, mask.shape[-1])
+    obs_, opp_obs = [], []
+    mask_, opp_mask = [], []
+    for i in range(len(filter)):
+        if filter[i]:
+            obs_.append(obs[i])
+            mask_.append(mask[i])
+        else:
+            opp_obs.append(obs[i])
+            opp_mask.append(mask[i])
+    if len(obs_) > 0:
+        obs_ = torch.stack(obs_)
+        mask_ = torch.stack(mask_)
+    if len(opp_obs) > 0:
+        opp_obs = torch.stack(opp_obs)
+        opp_mask = torch.stack(opp_mask)
+    # obs_filter = filter.unsqueeze(-1).repeat(1, obs.shape[1:])
+    # mask_filter = filter.unsqueeze(-1).repeat(1, mask.shape[1:])
+    #
+    # obs_, opp_obs = obs[obs_filter].reshape(-1, obs.shape[1:]), obs[~obs_filter].reshape(-1, obs.shape[1:])
+    # mask_, opp_mask = mask[mask_filter].reshape(-1, mask.shape[1:]), mask[~mask_filter].reshape(-1, mask.shape[1:])
 
-    obs_, opp_obs = obs[obs_filter].reshape(-1, obs.shape[-1]), obs[~obs_filter].reshape(-1, obs.shape[-1])
-    mask_, opp_mask = mask[mask_filter].reshape(-1, mask.shape[-1]), mask[~mask_filter].reshape(-1, mask.shape[-1])
+    # obs_filter = filter.unsqueeze(-1).repeat(1, obs.shape[-1])
+    # mask_filter = filter.unsqueeze(-1).repeat(1, mask.shape[-1])
+    #
+    # obs_, opp_obs = obs[obs_filter].reshape(-1, obs.shape[-1]), obs[~obs_filter].reshape(-1, obs.shape[-1])
+    # mask_, opp_mask = mask[mask_filter].reshape(-1, mask.shape[-1]), mask[~mask_filter].reshape(-1, mask.shape[-1])
     return (obs_, opp_obs), (mask_, opp_mask)
 
 def merge_actions(train_ids, actions, opp_actions):
@@ -372,7 +393,7 @@ if __name__ == "__main__":
             logprob = opp_logprob = torch.zeros(0)
             with torch.no_grad():
                 (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
-                if len(next_obs > 0):
+                if len(next_obs) > 0:
                     # global step only counts where our training agent is acting
                     global_step += sum(train_ids).item()
 
@@ -380,7 +401,7 @@ if __name__ == "__main__":
                     insert_at_indices(obs, steps, train_ids, next_obs)
                     action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
                     insert_at_indices(values, steps, train_ids, value.flatten())
-                if (len(opp_obs > 0)):
+                if len(opp_obs) > 0:
                     opp_action, opp_logprob, _, value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
                 # self-play admin
@@ -390,7 +411,7 @@ if __name__ == "__main__":
                     opponent = training_manager.sample_opponent()
 
                 # modified
-                if len(next_obs > 0):
+                if len(next_obs) > 0:
                     # merge back actions and logprobs
                     action_ = merge_actions(train_ids, action, opp_action)
                     insert_at_indices(actions, steps, train_ids, action)
