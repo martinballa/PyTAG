@@ -125,7 +125,8 @@ def merge_actions(train_ids, actions, opp_actions):
     return results
 
 
-def insert_at_indices(buffer, global_step, indices, values):
+def insert_at_indices(buffer, global_step, indices, values, sparse=True):
+    # sparse means that len(values) <= len(indices) - in this case we need different indexing
     # modifies buffer directly - inserts values into tensor at indices
     # used to populate the tensors during training with each env's corresponding transitions
     # buffer is [Batch, num-envs, ...]; note that len(indices) >= len(values)
@@ -134,6 +135,10 @@ def insert_at_indices(buffer, global_step, indices, values):
         for i in range(len(indices)):
             if indices[i]:
                 buffer[global_step[i], i] = values[j]
+                if sparse: # only update at indices
+                    j += 1
+            # always update
+            if not sparse:
                 j += 1
 
 
@@ -282,7 +287,7 @@ def parse_args():
     parser.add_argument("--sp-save-checkpoints", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True, help="Whether to save checkpoints to disk instead of keeping them in memory")
 
     args = parser.parse_args()
-    args.batch_size = int(args.num_envs * args.num_steps)
+    args.batch_size = int(args.num_envs * args.num_steps) # max batch-size
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     # fmt: on
     return args
@@ -370,7 +375,6 @@ if __name__ == "__main__":
     learning_id = torch.from_numpy(next_info["learning_player"]).to(device)
     player_id = torch.from_numpy(next_info["player_id"]).to(device)
     train_ids = (learning_id == player_id).int()
-    prev_train_idx = learning_id
 
     step = 0
     steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
@@ -392,17 +396,14 @@ if __name__ == "__main__":
             action = opp_action = torch.zeros(0) # just a placeholder
             logprob = opp_logprob = torch.zeros(0)
             with torch.no_grad():
+                # global step only counts where our training agent is acting
+                global_step += sum(train_ids).item()
                 (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
                 if len(next_obs) > 0:
-                    # global step only counts where our training agent is acting
-                    global_step += sum(train_ids).item()
-
                     # self-play agent acting
-                    insert_at_indices(obs, steps, train_ids, next_obs)
                     action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
-                    insert_at_indices(values, steps, train_ids, value.flatten())
                 if len(opp_obs) > 0:
-                    opp_action, opp_logprob, _, value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
+                    opp_action, opp_logprob, _, opp_value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
                 # self-play admin
                 if global_step % training_manager.checkpoint_freq < sum(train_ids):
@@ -414,6 +415,9 @@ if __name__ == "__main__":
                 if len(next_obs) > 0:
                     # merge back actions and logprobs
                     action_ = merge_actions(train_ids, action, opp_action)
+                    # update buffers
+                    insert_at_indices(obs, steps, train_ids, next_obs)
+                    insert_at_indices(values, steps, train_ids, value.flatten())
                     insert_at_indices(actions, steps, train_ids, action)
                     insert_at_indices(logprobs, steps, train_ids, logprob)
                     insert_at_indices(masks, steps, train_ids, next_mask)
@@ -429,13 +433,15 @@ if __name__ == "__main__":
 
             # due to the vec env the player ids are resampled at the next episode - so we need the previous player id
             # when we win - we get reward instantly
-            insert_at_indices(rewards, steps, train_ids, reward)
-            insert_at_indices(dones, steps, train_ids, done)
+            insert_at_indices(rewards, steps, train_ids, reward, sparse=False)
+            insert_at_indices(dones, steps, train_ids, done, sparse=False)
 
             # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
             # note that only the learning player gets reward from the SP env
-            insert_at_indices(rewards, steps-1, torch.logical_and(done, ~train_ids.bool()).int(), reward)
-            insert_at_indices(dones, steps-1, torch.logical_and(done, ~train_ids.bool()).int(), done)
+            insert_at_indices(rewards, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), reward, sparse=False)
+            insert_at_indices(dones, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), done, sparse=False)
+            # insert_at_indices(rewards, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), reward, sparse=False)
+            # insert_at_indices(dones, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), done, sparse=False)
 
             next_obs = torch.Tensor(next_obs).to(device)
             if args.framestack > 1:
@@ -444,7 +450,6 @@ if __name__ == "__main__":
             # keep track of the steps
             steps += train_ids
             step = steps.max()
-            prev_train_idx = learning_id
 
             learning_id = torch.from_numpy(info["learning_player"]).to(device)
             player_id = torch.from_numpy(info["player_id"]).to(device)
@@ -498,8 +503,7 @@ if __name__ == "__main__":
 
         # flatten the batch and cut-off the trajectories
         j = 0
-        for i in range(len(steps)):
-            j += 0 if i == 0 else steps[i - 1]
+        for i in range(args.num_envs):
             b_obs[j:j+steps[i]] = obs[:steps[i], i]
             b_logprobs[j:j+steps[i]] = logprobs[:steps[i], i]
             b_actions[j:j+steps[i]] = actions[:steps[i], i]
@@ -507,6 +511,7 @@ if __name__ == "__main__":
             b_advantages[j:j+steps[i]] = advantages[:steps[i], i]
             b_returns[j:j+steps[i]] = returns[:steps[i], i]
             b_values[j:j+steps[i]] = values[:steps[i], i]
+            j += steps[i]
 
         # Optimizing the policy and value network
         b_inds = np.arange(n_transitions)
