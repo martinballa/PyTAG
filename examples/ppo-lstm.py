@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
 from pytag.utils.common import make_env
-from utils.networks import PPOLSTM
+from examples.utils.networks import PPOLSTM
 
 def parse_args():
     # fmt: off
