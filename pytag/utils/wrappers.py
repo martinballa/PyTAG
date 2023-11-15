@@ -40,12 +40,13 @@ class StrategoWrapper(gym.ObservationWrapper):
 
 class SushiGoWrapper(gym.ObservationWrapper):
     # Sushi GO wrapper - an example that extracts the observation from JSON
-    def __init__(self, env):
+    def __init__(self, env, n_players=2):
         super().__init__(env)
         self.card_types = ["Maki", "Maki-2", "Maki-3", "Chopsticks", "Tempura", "Sashimi", "Dumpling", "SquidNigiri",
                       "SalmonNigiri", "EggNigiri", "Wasabi", "Pudding"]
-
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=[147], dtype=np.float32)
+        self.n_players = n_players
+        self._obs_shapes = [-1, 147, 160, 173]
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=[self._obs_shapes[n_players-1]], dtype=np.float32)
         self.max_cards_in_hand = 10
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
@@ -89,57 +90,7 @@ class SushiGoWrapper(gym.ObservationWrapper):
         round = np.expand_dims(round, 0)
         played_cards = np.sum(played_cards_, axis=0)
         cards_in_hand = np.stack(cards_in_hand_, 0).flatten()
-        opp_played_cards = np.sum(opponent_played_cards_, axis=1).flatten()
-        obs = np.concatenate([score, round, played_cards, cards_in_hand, opp_played_cards, opp_scores])
-        return obs
-
-class MASushiGoWrapper(SushiGoWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-
-    def observation(self, observation):
-        obs = self.process_json_obs(observation)
-        obs = torch.from_numpy(obs).float()
-        return obs
-
-    def get_card_id(self, card):
-        card_emb = np.zeros(len(self.card_types))
-        if card != "EmptyDeck":
-            card_emb[self.card_types.index(card)] = 1
-        return card_emb
-
-    def process_json_obs(self, json_obs, normalise=True):
-        # actions represent cardIds from left to right
-        for key, value in json_obs.items():
-            player_id = key
-            json_ = json.loads(str(value))
-        # json_ = json.loads(str(json_obs))
-        # player_id = json_["PlayerID"]
-        played_cards = json_["playedCards"].split(",")
-        cards_in_hand = json_["cardsInHand"].split(",")
-        score = json_["playerScore"] / 50  # keep it close to 0-1
-        round = json_["rounds"] / 3  # max 3 rounds
-
-        opp_scores = []
-        opponent_played_cards_ = []
-        for key in json_.keys():
-            if f"opp" in key and "playedCards" in key:
-                opp_played_cards = json_[key].split(",")
-                opponent_played_cards_.append(([self.get_card_id(card) for card in opp_played_cards]))
-            if f"opp" in key and "score" in key:
-                opp_score = json_[key] / 50
-                opp_scores.append(opp_score)
-
-        played_cards_ = [self.get_card_id(card) for card in played_cards]
-        cards_in_hand_ = [self.get_card_id(card) for card in cards_in_hand]
-        while len(cards_in_hand_) < self.max_cards_in_hand:
-            cards_in_hand_.append(np.zeros(len(self.card_types)))
-
-        score = np.expand_dims(score, 0)
-        round = np.expand_dims(round, 0)
-        played_cards = np.sum(played_cards_, axis=0)
-        cards_in_hand = np.stack(cards_in_hand_, 0).flatten()
-        opp_played_cards = np.sum(opponent_played_cards_, axis=1).flatten()
+        opp_played_cards = np.concatenate([np.sum(opc, axis=0) for opc in opponent_played_cards_])
         obs = np.concatenate([score, round, played_cards, cards_in_hand, opp_played_cards, opp_scores])
         return obs
 

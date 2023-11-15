@@ -8,7 +8,7 @@ import jpype
 import jpype.imports
 from pytag.gym_wrapper.envs import TAGSelfPlayGYm, TagSingleplayerGym
 from pytag import PyTAG, MultiAgentPyTAG, SelfPlayPyTAG
-from pytag.utils.wrappers import StrategoWrapper, SushiGoWrapper, MASushiGoWrapper
+from pytag.utils.wrappers import StrategoWrapper, SushiGoWrapper
 
 
 def make_sp_env(env_id, seed, n_players, framestack=1, obs_type="vector", randomise_order=False):
@@ -27,7 +27,7 @@ def make_sp_env(env_id, seed, n_players, framestack=1, obs_type="vector", random
         if "Stratego" in env_id:
             env = StrategoWrapper(env)
         if "Sushi" in env_id:
-            env = SushiGoWrapper(env)
+            env = SushiGoWrapper(env, n_players=n_players)
         if framestack > 1:
             env = FrameStack(env, framestack)
         return env
@@ -46,7 +46,7 @@ def make_env(env_id, seed, opponent, n_players, framestack=1, obs_type="vector",
         if "Stratego" in env_id:
             env = StrategoWrapper(env)
         if "Sushi" in env_id:
-            env = SushiGoWrapper(env)
+            env = SushiGoWrapper(env, n_players=n_players)
         if framestack > 1:
             env = FrameStack(env, framestack)
         return env
