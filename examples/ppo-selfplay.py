@@ -162,7 +162,7 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         episodes = 0
         total_steps = 0
         rewards, lengths, outcomes = [], [], []
-        wins, ties, losses = [], [], []
+        wins, ties, losses, player_scores, score_diffs = [], [], [], [], []
 
         start_time = time.time()
         next_obs, next_info = envs.reset()
@@ -196,11 +196,15 @@ def evaluate(args, agent, global_step, opponents=["random"]):
                         wins.append(info["episode"]["wins"][i])
                         ties.append(info["episode"]["ties"][i])
                         losses.append(info["episode"]["losses"][i])
+                        player_scores = info["episode"]["player_score"][i]
+                        score_diffs = info["episode"]["score_diff"][i]
 
                         episodes += 1
         writer.add_scalar(f"eval/{opponent}/episodic_wins", np.mean(wins), global_step)
         writer.add_scalar(f"eval/{opponent}/episodic_ties", np.mean(ties), global_step)
         writer.add_scalar(f"eval/{opponent}/episodic_losses", np.mean(losses), global_step)
+        writer.add_scalar(f"eval/{opponent}/episodic_player_scores", np.mean(player_scores), global_step)
+        writer.add_scalar(f"eval/{opponent}/episodic_score_diff", np.mean(score_diffs), global_step)
 
         writer.add_scalar(f"eval/{opponent}/mean_return", np.mean(rewards), global_step)
         writer.add_scalar(f"eval/{opponent}/mean_length", np.mean(lengths), global_step)
@@ -470,6 +474,8 @@ if __name__ == "__main__":
                         writer.add_scalar("charts/episodic_wins", info["episode"]["wins"][i], global_step)
                         writer.add_scalar("charts/episodic_ties", info["episode"]["ties"][i], global_step)
                         writer.add_scalar("charts/episodic_losses", info["episode"]["losses"][i], global_step)
+                        writer.add_scalar("charts/episodic_player_scores", info["episode"]["player_score"][i], global_step)
+                        writer.add_scalar("charts/episodic_score_diff", info["episode"]["score_diff"][i], global_step)
 
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"][i], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"][i], global_step)

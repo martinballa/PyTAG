@@ -158,6 +158,8 @@ class RecordEpisodeStatistics(gym.Wrapper):
                 )
             else:
                 outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
+                player_score = np.array([0 if info is None else info["player_score"] for info in infos["final_info"]])
+                winner_score = np.array([0 if info is None else max(info["final_scores"]) for info in infos["final_info"]])
                 infos["episode"] = {
                     "r": np.where(dones, self.episode_returns, 0.0),
                     "l": np.where(dones, self.episode_lengths, 0),
@@ -170,6 +172,8 @@ class RecordEpisodeStatistics(gym.Wrapper):
                     "wins": np.where(outcomes == 1.0, 1.0, 0.0),
                     "losses": np.where(outcomes == -1.0, 1.0, 0.0),
                     "ties": np.where(outcomes == 0, 1.0, 0.0),
+                    "player_score": player_score,
+                    "score_diff": winner_score - player_score,
                 }
                 if self.is_vector_env:
                     infos["_episode"] = np.where(dones, True, False)
@@ -253,6 +257,8 @@ class RecordSelfPlayEpStats(gym.Wrapper):
                 )
             else:
                 outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
+                player_score = np.array([0 if info is None else info["player_score"] for info in infos["final_info"]])
+                winner_score = np.array([0 if info is None else max(info["final_scores"]) for info in infos["final_info"]])
                 infos["episode"] = {
                     "r": np.where(dones, self.episode_returns, 0.0),
                     "l": np.where(dones, self.episode_lengths, 0),
@@ -266,6 +272,8 @@ class RecordSelfPlayEpStats(gym.Wrapper):
                     "wins": np.where(outcomes == 1.0, 1.0, 0.0),
                     "losses": np.where(outcomes == -1.0, 1.0, 0.0),
                     "ties": np.where(outcomes == 0, 1.0, 0.0),
+                    "player_score": player_score,
+                    "score_diff": winner_score - player_score,
                 }
                 if self.is_vector_env:
                     infos["_episode"] = np.where(dones, True, False)

@@ -126,7 +126,9 @@ class PyTAG():
         self._update_data()
         done = self._java_env.isDone()
         info = {"action_mask": self._last_action_mask,
-                "has_won": int(self.terminal_reward(self._playerID))}
+                "has_won": int(self.terminal_reward(self._playerID)),
+                "final_scores": np.array(self._java_env.getScores()),
+                "player_score": self._java_env.getScore(self._playerID)}
         return self._last_obs_vector, reward, done, info
 
     def close(self):
