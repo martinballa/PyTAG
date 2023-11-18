@@ -278,6 +278,7 @@ def parse_args():
     parser.add_argument("--n-players", type=int, default=2,
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)
+    parser.add_argument('--reward-type', type=str, default='DEFAULT', choices=["DEFAULT", "SCORE", "LEADER", "TERMINAL", "ORDINAL"])
 
     # self-play args
     parser.add_argument("--sp-checkpoint-freq", type=int, default=int(5e4))
@@ -335,7 +336,7 @@ if __name__ == "__main__":
     if "Sushi" in args.env_id:
         obs_type = "json"
     envs = gym.vector.SyncVectorEnv(
-        [make_sp_env(args.env_id, args.seed + i, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type) for i in range(args.num_envs)]
+        [make_sp_env(args.env_id, args.seed + i, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type, reward_type=args.reward_type) for i in range(args.num_envs)]
     )
     # For environments in which the action-masks align (aka same amount of actions)
     # This wrapper will merge them all into one numpy array, instead of having an array of arrays
@@ -438,8 +439,16 @@ if __name__ == "__main__":
 
             # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
             # note that only the learning player gets reward from the SP env
-            insert_at_indices(rewards, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), reward, sparse=False)
-            insert_at_indices(dones, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), done, sparse=False)
+            # todo with the score this may happen anytime
+            # insert_at_indices(rewards, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), reward, sparse=False)
+            # insert_at_indices(dones, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), done, sparse=False)
+
+            # todo these should be += instead of overwriting
+            insert_at_indices(rewards, steps - 1, torch.logical_not(train_ids).int(), reward,
+                              sparse=False)
+            insert_at_indices(dones, steps - 1, torch.logical_not(train_ids).int(), done,
+                              sparse=False)
+
             # insert_at_indices(rewards, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), reward, sparse=False)
             # insert_at_indices(dones, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), done, sparse=False)
 
