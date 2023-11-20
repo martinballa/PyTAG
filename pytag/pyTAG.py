@@ -117,11 +117,10 @@ class PyTAG():
             action = self._rnd.choice(valid_actions)
             self._java_env.step(action)
             print("invalid action")
-            reward = -1
+            # reward = -1
         else:
             self._java_env.step(action)
-            reward = self.get_reward(self._playerID)
-            # reward = self.terminal_reward(self._playerID)
+        reward = self.get_reward(self._playerID)
 
         self._update_data()
         done = self._java_env.isDone()

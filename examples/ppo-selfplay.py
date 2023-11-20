@@ -114,7 +114,8 @@ def split_obs(obs, mask, filter):
 def merge_actions(train_ids, actions, opp_actions):
     """Function to merge back together the actions"""
     i = j = 0
-    results = torch.zeros(actions.shape[0] + opp_actions.shape[0], dtype=actions.dtype)
+    n_opp_actions = opp_actions.shape[0] if len(opp_actions) > 0 else 0
+    results = torch.zeros(actions.shape[0] + n_opp_actions, dtype=actions.dtype)
     for id in train_ids:
         if id:
             results[i+j] = actions[i]
@@ -403,10 +404,10 @@ if __name__ == "__main__":
             with torch.no_grad():
                 # global step only counts where our training agent is acting
                 global_step += sum(train_ids).item()
-                (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
-                if len(next_obs) > 0:
+                (learner_obs, opp_obs), (learner_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
+                if len(learner_obs) > 0:
                     # self-play agent acting
-                    action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
+                    action, logprob, _, value = agent.get_action_and_value(learner_obs, mask=learner_mask)
                 if len(opp_obs) > 0:
                     opp_action, opp_logprob, _, opp_value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
@@ -417,20 +418,20 @@ if __name__ == "__main__":
                     opponent = training_manager.sample_opponent()
 
                 # modified
-                if len(next_obs) > 0:
+                if len(learner_obs) > 0:
                     # merge back actions and logprobs
-                    action_ = merge_actions(train_ids, action, opp_action)
+                    merged_actions = merge_actions(train_ids, action, opp_action)
                     # update buffers
-                    insert_at_indices(obs, steps, train_ids, next_obs)
+                    insert_at_indices(obs, steps, train_ids, learner_obs)
                     insert_at_indices(values, steps, train_ids, value.flatten())
                     insert_at_indices(actions, steps, train_ids, action)
                     insert_at_indices(logprobs, steps, train_ids, logprob)
-                    insert_at_indices(masks, steps, train_ids, next_mask)
+                    insert_at_indices(masks, steps, train_ids, learner_mask)
                 else:
-                    action_ = opp_action
+                    merged_actions = opp_action
 
             # merge the actions back together
-            next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
+            next_obs, reward, done, truncated, info = envs.step(merged_actions.cpu().numpy())
 
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
             reward = torch.tensor(reward).to(device)
@@ -443,18 +444,12 @@ if __name__ == "__main__":
 
             # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
             # note that only the learning player gets reward from the SP env
-            # todo with the score this may happen anytime
-            # insert_at_indices(rewards, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), reward, sparse=False)
-            # insert_at_indices(dones, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), done, sparse=False)
 
             # todo these should be += instead of overwriting
             insert_at_indices(rewards, steps - 1, torch.logical_not(train_ids).int(), reward,
                               sparse=False)
             insert_at_indices(dones, steps - 1, torch.logical_not(train_ids).int(), done,
                               sparse=False)
-
-            # insert_at_indices(rewards, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), reward, sparse=False)
-            # insert_at_indices(dones, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), done, sparse=False)
 
             next_obs = torch.Tensor(next_obs).to(device)
             if args.framestack > 1:
