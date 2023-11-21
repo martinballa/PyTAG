@@ -143,7 +143,9 @@ def insert_at_indices(buffer, global_step, indices, values, sparse=True):
                 j += 1
 
 
-def evaluate(args, agent, global_step, opponents=["random"]):
+def evaluate(args, agent, global_step, eval_episodes=-1, opponents=["random"]):
+    if eval_episodes == -1:
+        eval_episodes = args.eval_episodes
     for opponent in opponents:
         # todo maybe instead of making a new env, we could just store the eval envs
         obs_type = "vector"
@@ -172,7 +174,7 @@ def evaluate(args, agent, global_step, opponents=["random"]):
             next_obs = next_obs.view(next_obs.shape[0], -1)
         next_masks = torch.from_numpy(next_info["action_mask"]).to(device)
 
-        while episodes < args.eval_episodes:
+        while episodes < eval_episodes:
             total_steps += 1 * args.num_envs
 
             with torch.no_grad():
@@ -596,10 +598,12 @@ if __name__ == "__main__":
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
 
-
         # reset counters
         step = 0
         steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
+
+    # final evaluation - play 100 games against each opponent
+    evaluate(args, agent, global_step, eval_episodes=100, opponents=["random", "osla", "mcts"])
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")
