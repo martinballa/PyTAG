@@ -33,7 +33,7 @@ class TagSingleplayerGym(gym.Env):
         return obs, info
 
     def step(self, action):
-        obs, reward, done, info =  self._env.step(action)
+        obs, reward, done, info = self._env.step(action)
         # truncated = False
         return obs, reward, done, False, info
     
@@ -44,11 +44,11 @@ class TagSingleplayerGym(gym.Env):
         return self._last_action_mask[action]
 
 class TAGSelfPlayGYm(gym.Env):
-    def __init__(self, game_id: str, n_players:int =2, seed: int = 0, obs_type: str = "vector"):
+    def __init__(self, game_id: str, n_players:int =2, seed: int = 0, obs_type: str = "vector", reward_type: str = "DEFAULT"):
         super().__init__()
         self._obs_type = obs_type
         # initialise the self-play pytag environment
-        self._env = SelfPlayPyTAG(n_players, game_id=game_id, seed=seed, obs_type=obs_type)
+        self._env = SelfPlayPyTAG(n_players, game_id=game_id, seed=seed, obs_type=obs_type, reward_type=reward_type)
 
         # Construct action/observation space - note this requires resetting the environment
         self._env.reset()

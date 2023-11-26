@@ -27,6 +27,9 @@ def get_agent_class(agent_name):
         return jpype.JClass("players.python.PythonAgent")
     return None
 
+def get_reward_types():
+    return [str(rew_type) for rew_type in jpype.JClass("core.PyTAG").listRewardTypes()]
+
 def get_mcts_with_params(json_path):
     PlayerFactory = jpype.JClass("players.PlayerFactory")
     with open(os.path.expanduser(json_path)) as json_file:
@@ -41,14 +44,17 @@ class PyTAG():
     This class expects to have a single python agents
     Note that the java jar package is expected to be in the jars folder of the same directory as this file.
     """
-    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector", reward_type="DEFAULT"):
         self._last_obs_vector = None
         self._last_action_mask = None
         self._rnd = random.Random(seed)
         self._obs_type = obs_type
+        self._reward_type = reward_type
+        self._prev_score = 0.0  # kepts for calculating delta scores for reward
 
         assert game_id in _game_registry, f"Game {game_id} not supported. Supported games are {_game_registry}"
         assert _game_registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
+        assert reward_type in get_reward_types(), f"Reward type {reward_type} not supported. Supported reward types are {get_reward_types()}"
         # start up the JVM
         tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
         jpype.addClassPath(tag_jar)
@@ -68,7 +74,8 @@ class PyTAG():
         else:
             agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
         self._playerID = agent_ids.index("python") # if multiple python agents this is the first one
-        self._java_env = PyTAGEnv(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
+        rew_type = PyTAGEnv.getRewardType(self._reward_type)
+        self._java_env = PyTAGEnv(gameType, None, jpype.java.util.ArrayList(agents), seed, True, rew_type)
 
         # Construct action/observation space
         self._java_env.reset()
@@ -83,8 +90,20 @@ class PyTAG():
     def get_action_tree_shape(self):
         return self._action_tree_shape
 
+    def get_reward(self, player_id):
+        if self._reward_type == "DEFAULT":
+            return self.terminal_reward(player_id)
+        # if self._reward_type == "SCORE":
+
+        current_score = float(self._java_env.getReward(player_id))
+        reward = current_score - self._prev_score
+        self._prev_score = current_score
+        return reward
+        # return float(self._java_env.getReward(player_id))
+
     def reset(self):
         self._java_env.reset()
+        self._prev_score = 0.0
         self._update_data()
 
         return self._last_obs_vector, {"action_tree": self._action_tree_shape, "action_mask": self._last_action_mask,
@@ -98,15 +117,17 @@ class PyTAG():
             action = self._rnd.choice(valid_actions)
             self._java_env.step(action)
             print("invalid action")
-            reward = -1
+            # reward = -1
         else:
             self._java_env.step(action)
-            reward = self.terminal_reward(self._playerID)
+        reward = self.get_reward(self._playerID)
 
         self._update_data()
         done = self._java_env.isDone()
         info = {"action_mask": self._last_action_mask,
-                "has_won": int(self.terminal_reward(self._playerID))}
+                "has_won": int(self.terminal_reward(self._playerID)),
+                "final_scores": np.array(self._java_env.getScores()),
+                "player_score": self._java_env.getScore(self._playerID)}
         return self._last_obs_vector, reward, done, info
 
     def close(self):
@@ -179,8 +200,8 @@ class SelfPlayPyTAG(PyTAG):
     Only running python agents for training - player IDs are randomised at each episode
     player ids are return in info rather than as a dictionary
     """
-    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
-        super().__init__(["python"]*n_players, game_id, seed, obs_type)
+    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector", reward_type="DEFAULT"):
+        super().__init__(["python"]*n_players, game_id, seed, obs_type, reward_type=reward_type)
         # the training agent always gets our internal ID representation not the ids coming from the env directly
         self._learner_id = 0
         self.n_players = n_players
@@ -211,13 +232,15 @@ class SelfPlayPyTAG(PyTAG):
         # print(f"action = {action}")
         # print(f"obs = \n{self._last_obs_vector.reshape(3, 3)}")
 
+        # todo multiple calls to get_rewards leads to unexpected behaviour
         obs, rewards, done, info = super().step(action)
         info["player_id"] = self.getPlayerID()
         info["learning_player"] = self.getLearnerID()
         # info["has_won"] = int(self.terminal_reward(self.player_mapping[self._learner_id]))
 
         # only learner player gets rewards
-        rewards = self.terminal_reward(self._playerID)
+        # rewards = self.get_reward(self._playerID)
+        # rewards = self.terminal_reward(self._playerID)
         # rewards = self.terminal_reward(self.player_mapping[self._learner_id])
 
         # print("------------- Transitioning to next -------------")
