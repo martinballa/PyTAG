@@ -94,16 +94,17 @@ def get_lstm_states(lstm_states, player_id, learning_id):
     # in the end this is just [2, 1, len(learner_ids), 128]
     # need to use torch.gather
     learner_lstms, opp_lstms = [], []
+    n_learner = (player_id == learning_id).sum().item()
     if len(learner_env_ids) > 0:
         learner_lstms = torch.stack(
-        [lstm_states[player_id[i], :, :, i, :] for i in range(len(player_id)) if (player_id == learning_id)[i]]).view(len(player_id),
+        [lstm_states[player_id[i], :, :, i, :] for i in range(len(player_id)) if (player_id == learning_id)[i]]).view(2,
                                                                                                                       1,
                                                                                                                       -1,
                                                                                                                       lstm_states.shape[-1])
     if len(opp_env_ids) > 0:
         opp_lstms = torch.stack(
             [lstm_states[player_id[i], :, :, i, :] for i in range(len(player_id)) if (player_id != learning_id)[i]]).view(
-            len(player_id), 1, -1, lstm_states.shape[-1])
+            2, 1, -1, lstm_states.shape[-1])
     # learner_lstsm = lstm_states[player_id, :, :, learner_env_ids] if len(learner_env_ids) > 0 else [] # this returns all of them
     # opp_lstsm = lstm_states[player_id, :, :, opp_env_ids] if len(opp_env_ids) > 0 else [] # this returns all of them
     # todo we still don't exactly have what we need
@@ -133,17 +134,17 @@ def update_lstm_states(lstm_states, player_ids, learning_id, learner_lstm, opp_l
     # modifies the lstm states directly
     i = j = 0
     if len(learner_lstm) > 0:
-        learner_lstm = torch.stack(learner_lstm).swapaxes(1, 2)
+        learner_lstm = torch.stack(learner_lstm) #.swapaxes(1, 2)
     if len(opp_lstm) > 0:
-        opp_lstm = torch.stack(opp_lstm).swapaxes(1, 2)
+        opp_lstm = torch.stack(opp_lstm) #.swapaxes(1, 2)
     # we need to index player_id and env_id too
     # LSTM dimensions [n_players, 2, n_layers, n_envs, hidden_size]
     while i + j < len(player_ids):
         if player_ids[i+j] == learning_id[i+j]:
-            lstm_states[player_ids[i+j], :, :, i + j] = learner_lstm[i]
+            lstm_states[player_ids[i+j], :, :, i] = learner_lstm[:, :, i]
             i += 1
         else:
-            lstm_states[player_ids[i+j], :, :, i + j] = opp_lstm[j]
+            lstm_states[player_ids[i+j], :, :, i + j] = opp_lstm[:, :, j]
             j += 1
 def split_by_filter(tensor, filter):
     t, t_ = [], []
@@ -180,7 +181,8 @@ def split_obs(obs, mask, filter):
 def merge_actions(train_ids, actions, opp_actions):
     """Function to merge back together the actions"""
     i = j = 0
-    results = torch.zeros(actions.shape[0] + opp_actions.shape[0], dtype=actions.dtype)
+    n_opp_actions = opp_actions.shape[0] if len(opp_actions) > 0 else 0
+    results = torch.zeros(actions.shape[0] + n_opp_actions, dtype=actions.dtype)
     for id in train_ids:
         if id:
             results[i+j] = actions[i]
@@ -230,8 +232,14 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         rewards, lengths, outcomes = [], [], []
         wins, ties, losses = [], [], []
 
+        next_lstm_state = (
+            torch.zeros(agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size).to(device),
+            torch.zeros(agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size).to(device),
+        )  # hidden and cell states (see https://youtu.be/8HyCNIVRbSU)
+
         start_time = time.time()
         next_obs, next_info = envs.reset()
+        done = torch.zeros(args.num_envs).to(device)
         next_obs = torch.tensor(next_obs).to(device)
         if args.framestack > 1:
             next_obs = next_obs.view(next_obs.shape[0], -1)
@@ -242,11 +250,12 @@ def evaluate(args, agent, global_step, opponents=["random"]):
 
             with torch.no_grad():
                 # all actions are for our agent
-                action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
+                action, logprob, _, value, next_lstm_state = agent.get_action_and_value(next_obs, mask=next_masks, lstm_state=next_lstm_state, done=done)
 
             next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
 
             # preparing for next step
+            done = torch.from_numpy(done).int().to(device)
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
             next_obs = torch.Tensor(next_obs).to(device)
             if args.framestack > 1:
@@ -344,6 +353,7 @@ def parse_args():
     parser.add_argument("--n-players", type=int, default=2,
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)
+    parser.add_argument('--reward-type', type=str, default='DEFAULT', choices=["DEFAULT", "SCORE", "LEADER", "TERMINAL", "ORDINAL"])
 
     # self-play args
     parser.add_argument("--sp-checkpoint-freq", type=int, default=int(5e4))
@@ -401,7 +411,7 @@ if __name__ == "__main__":
     if "Sushi" in args.env_id:
         obs_type = "json"
     envs = gym.vector.SyncVectorEnv(
-        [make_sp_env(args.env_id, args.seed + i, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type) for i in range(args.num_envs)]
+        [make_sp_env(args.env_id, args.seed + i, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type, reward_type=args.reward_type) for i in range(args.num_envs)]
     )
     # For environments in which the action-masks align (aka same amount of actions)
     # This wrapper will merge them all into one numpy array, instead of having an array of arrays
@@ -474,21 +484,19 @@ if __name__ == "__main__":
             with torch.no_grad():
                 # global step only counts where our training agent is acting
                 global_step += sum(train_ids).item()
-                (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
+                (learner_obs, opp_obs), (learner_mask, opp_mask)  = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
                 d, d_ = split_by_filter(done, filter=(learning_id == player_id))
-                # lstm_s, other_lstm = split_by_filter(next_lstm_state, filter=(learning_id == player_id))
 
                 # get the corresponding lstm states
                 learner_lstm, opp_lstm = get_lstm_states(next_lstm_states, player_id, learning_id)
-                if len(next_obs) > 0:
+                if len(learner_obs) > 0:
                     # self-play agent acting
-                    action, logprob, _, value, learner_lstm = agent.get_action_and_value(next_obs,
+                    action, logprob, _, value, learner_lstm = agent.get_action_and_value(learner_obs,
                                                                                                 learner_lstm,
                                                                                                 d,
-                                                                                                mask=next_masks)
+                                                                                                mask=learner_mask)
                     # action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
                 if len(opp_obs) > 0:
-                    # todo we actually need to keep track of the opponent lstms too d_ is not correct
                     opp_action, opp_logprob, _, opp_value, opp_lstm = agent.get_action_and_value(opp_obs,
                                                                                                 opp_lstm,
                                                                                                 d_,
@@ -503,24 +511,24 @@ if __name__ == "__main__":
                     opponent = training_manager.sample_opponent()
 
                 # modified
-                if len(next_obs) > 0:
+                if len(learner_obs) > 0:
                     # merge back actions and logprobs
-                    action_ = merge_actions(train_ids, action, opp_action)
+                    merged_actions = merge_actions(train_ids, action, opp_action)
 
                     # update buffers
-                    insert_at_indices(obs, steps, train_ids, next_obs)
+                    insert_at_indices(obs, steps, train_ids, learner_obs)
                     insert_at_indices(values, steps, train_ids, value.flatten())
                     insert_at_indices(actions, steps, train_ids, action)
                     insert_at_indices(logprobs, steps, train_ids, logprob)
-                    insert_at_indices(masks, steps, train_ids, next_mask)
+                    insert_at_indices(masks, steps, train_ids, learner_mask)
                 else:
-                    action_ = opp_action
+                    merged_actions = opp_action
 
             # update lstm states
             update_lstm_states(next_lstm_states, player_id, learning_id, learner_lstm, opp_lstm)
 
             # merge the actions back together
-            next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
+            next_obs, reward, done, truncated, info = envs.step(merged_actions.cpu().numpy())
 
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
             reward = torch.tensor(reward).to(device)
@@ -533,10 +541,12 @@ if __name__ == "__main__":
 
             # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
             # note that only the learning player gets reward from the SP env
-            insert_at_indices(rewards, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), reward, sparse=False)
-            insert_at_indices(dones, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), done, sparse=False)
-            # insert_at_indices(rewards, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), reward, sparse=False)
-            # insert_at_indices(dones, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), done, sparse=False)
+
+            # todo these should be += instead of overwriting
+            insert_at_indices(rewards, steps - 1, torch.logical_not(train_ids).int(), reward,
+                              sparse=False)
+            insert_at_indices(dones, steps - 1, torch.logical_not(train_ids).int(), done,
+                              sparse=False)
 
             next_obs = torch.Tensor(next_obs).to(device)
             if args.framestack > 1:
@@ -556,6 +566,8 @@ if __name__ == "__main__":
                         writer.add_scalar("charts/episodic_wins", info["episode"]["wins"][i], global_step)
                         writer.add_scalar("charts/episodic_ties", info["episode"]["ties"][i], global_step)
                         writer.add_scalar("charts/episodic_losses", info["episode"]["losses"][i], global_step)
+                        writer.add_scalar("charts/episodic_player_scores", info["episode"]["player_score"][i], global_step)
+                        writer.add_scalar("charts/episodic_score_diff", info["episode"]["score_diff"][i], global_step)
 
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"][i], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"][i], global_step)
@@ -564,9 +576,9 @@ if __name__ == "__main__":
 
             # if we have just passed this point then we evaluate
             # todo add back evaluation
-            # with torch.no_grad():
-            #     if global_step % args.eval_freq <= sum(train_ids).item():
-            #         evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
+            with torch.no_grad():
+                if global_step % args.eval_freq <= sum(train_ids).item():
+                    evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
 
         # bootstrap value if not done
         # update starts here: we want to take the final observation where the training agent was used for acting
@@ -718,6 +730,9 @@ if __name__ == "__main__":
         # reset counters
         step = 0
         steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
+
+    # final evaluation - play 100 games against each opponent
+    # evaluate(args, agent, global_step, eval_episodes=100, opponents=["random", "osla", "mcts"])
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")
