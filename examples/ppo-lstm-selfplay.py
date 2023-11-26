@@ -82,37 +82,68 @@ class SelfPlayAssistant():
             self.update_pool(agent_copy, step)
 
 def get_lstm_states(lstm_states, player_id, learning_id):
-    # gets the corresponding lstm states for each agent
-    lstms, lstms_ = [], []
-    lstm0, lstm1 = [], []
-    lstm0_, lstm1_ = [], []
-    # lstm_states [n_players, n_layers, n_envs, hidden_size]
-    for i in range(len(player_id)):
-        if player_id[i] == learning_id[i]:
-            lstm0.append(lstm_states[player_id[i]][0][:, i, ])
-            lstm1.append(lstm_states[player_id[i]][1][:, i, ])
-        else:
-            lstm0_.append(lstm_states[player_id[i]][0][:, i, ])
-            lstm1_.append(lstm_states[player_id[i]][1][:, i, ])
-    # todo probably we don't want to stack these
-    if len(lstm0) > 0:
-        lstms = torch.stack(lstm0, axis=1), torch.stack(lstm1, axis=1)
-    if len(lstm0_) > 0:
-        lstms_ = torch.stack(lstm0_, axis=1), torch.stack(lstm1_, axis=1)
+    # gets the corresponding lstm states for each agent and for each env
+    # lstm_states is a dict of [n_players, 2 (tuple), n_layers, n_lstms, hidden_size]
+    # todo we can actualy use a list of indices lstm_states[0, :, :, 0, [0, 1, 3, 4, 5, 6, 10, 11]]
+    # todo LSTM has an additional dimension for n_players
+    # todo LSTM expects [num_layers (2), num_envs (varies), hidden_size(128)]
+    # todo we should return 2 LSTM states, 1, for acting player, 2 for opponents - depending on the player_id these may have different sizes
+    learner_env_ids = [x for x in range(len(player_id)) if (player_id == learning_id)[x]]
+    opp_env_ids = [x for x in range(len(player_id)) if (player_id != learning_id)[x]]
+    # todo this gets all the env - player id combinations - needs further filtering
+    # in the end this is just [2, 1, len(learner_ids), 128]
+    # need to use torch.gather
+    learner_lstms, opp_lstms = [], []
+    if len(learner_env_ids) > 0:
+        learner_lstms = torch.stack(
+        [lstm_states[player_id[i], :, :, i, :] for i in range(len(player_id)) if (player_id == learning_id)[i]]).view(len(player_id),
+                                                                                                                      1,
+                                                                                                                      -1,
+                                                                                                                      lstm_states.shape[-1])
+    if len(opp_env_ids) > 0:
+        opp_lstms = torch.stack(
+            [lstm_states[player_id[i], :, :, i, :] for i in range(len(player_id)) if (player_id != learning_id)[i]]).view(
+            len(player_id), 1, -1, lstm_states.shape[-1])
+    # learner_lstsm = lstm_states[player_id, :, :, learner_env_ids] if len(learner_env_ids) > 0 else [] # this returns all of them
+    # opp_lstsm = lstm_states[player_id, :, :, opp_env_ids] if len(opp_env_ids) > 0 else [] # this returns all of them
+    # todo we still don't exactly have what we need
+    return learner_lstms, opp_lstms
+    # lstms, lstms_ = [], []
+    # lstm0, lstm1 = [], []
+    # lstm0_, lstm1_ = [], []
+    # # lstm_states [n_players, n_layers, n_envs, hidden_size]
+    # for i in range(len(player_id)):
+    #     if player_id[i] == learning_id[i]:
+    #         lstm0.append(lstm_states[player_id[i]][0][:, i, ])
+    #         lstm1.append(lstm_states[player_id[i]][1][:, i, ])
+    #     else:
+    #         lstm0_.append(lstm_states[player_id[i]][0][:, i, ])
+    #         lstm1_.append(lstm_states[player_id[i]][1][:, i, ])
+    # # todo probably we don't want to stack these
+    # if len(lstm0) > 0:
+    #     lstms = torch.stack(lstm0, axis=1), torch.stack(lstm1, axis=1)
+    # if len(lstm0_) > 0:
+    #     lstms_ = torch.stack(lstm0_, axis=1), torch.stack(lstm1_, axis=1)
+    #
+    # # todo lstm expects tuple of 2 * [n_layers, n_envs, hidden_size]
+    # return lstms, lstms_
 
-    # todo lstm expects tuple of 2 * [n_layers, n_envs, hidden_size]
-    return lstms, lstms_
-
-def update_lstm_states(lstm_states, player_ids, learning_id, lstm_s, other_lstm):
+def update_lstm_states(lstm_states, player_ids, learning_id, learner_lstm, opp_lstm):
     # updates the lstm states with the new ones
     # modifies the lstm states directly
     i = j = 0
+    if len(learner_lstm) > 0:
+        learner_lstm = torch.stack(learner_lstm).swapaxes(1, 2)
+    if len(opp_lstm) > 0:
+        opp_lstm = torch.stack(opp_lstm).swapaxes(1, 2)
+    # we need to index player_id and env_id too
+    # LSTM dimensions [n_players, 2, n_layers, n_envs, hidden_size]
     while i + j < len(player_ids):
         if player_ids[i+j] == learning_id[i+j]:
-            lstm_states[player_ids[i+j]] = lstm_s[i]
+            lstm_states[player_ids[i+j], :, :, i + j] = learner_lstm[i]
             i += 1
         else:
-            lstm_states[player_ids[i+j]] = other_lstm[j]
+            lstm_states[player_ids[i+j], :, :, i + j] = opp_lstm[j]
             j += 1
 def split_by_filter(tensor, filter):
     t, t_ = [], []
@@ -399,10 +430,11 @@ if __name__ == "__main__":
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    next_lstm_states = [(
-        torch.zeros(agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size).to(device),
-        torch.zeros(agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size).to(device),
-    )] * args.n_players  # hidden and cell states (see https://youtu.be/8HyCNIVRbSU)
+    next_lstm_states = torch.zeros((args.n_players, 2, agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size)).to(device)
+    # next_lstm_states = [(
+    #     torch.zeros(agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size).to(device),
+    #     torch.zeros(agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size).to(device),
+    # )] * args.n_players  # hidden and cell states (see https://youtu.be/8HyCNIVRbSU)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -418,7 +450,9 @@ if __name__ == "__main__":
 
     step = 0
     steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
-    initial_lstm_state = (next_lstm_states[0][0].clone(), next_lstm_states[1][0].clone())
+
+    initial_lstm_state = next_lstm_states[0].clone()
+    # initial_lstm_state = (next_lstm_states[0][0].clone(), next_lstm_states[1][0].clone())
     done = torch.zeros(args.num_envs).to(device)
     while global_step < args.total_timesteps:
 
@@ -444,26 +478,24 @@ if __name__ == "__main__":
                 d, d_ = split_by_filter(done, filter=(learning_id == player_id))
                 # lstm_s, other_lstm = split_by_filter(next_lstm_state, filter=(learning_id == player_id))
 
-                lstm_s, other_lstm = get_lstm_states(next_lstm_states, player_id, learning_id)
-                # todo we actually need to keep track of the opponent lstms too
-                # todo each player has their own lstm states
-                # get them by filtering
+                # get the corresponding lstm states
+                learner_lstm, opp_lstm = get_lstm_states(next_lstm_states, player_id, learning_id)
                 if len(next_obs) > 0:
                     # self-play agent acting
-                    action, logprob, _, value, lstm_s = agent.get_action_and_value(next_obs,
-                                                                                                lstm_s,
+                    action, logprob, _, value, learner_lstm = agent.get_action_and_value(next_obs,
+                                                                                                learner_lstm,
                                                                                                 d,
                                                                                                 mask=next_masks)
                     # action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
                 if len(opp_obs) > 0:
                     # todo we actually need to keep track of the opponent lstms too d_ is not correct
-                    opp_action, opp_logprob, _, opp_value, other_lstm = agent.get_action_and_value(opp_obs,
-                                                                                                other_lstm,
+                    opp_action, opp_logprob, _, opp_value, opp_lstm = agent.get_action_and_value(opp_obs,
+                                                                                                opp_lstm,
                                                                                                 d_,
                                                                                                 mask=opp_mask)
                     # opp_action, opp_logprob, _, opp_value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
-                # todo we need to merge the lstm states back together
+
                 # self-play admin
                 if global_step % training_manager.checkpoint_freq < sum(train_ids):
                     training_manager.add_checkpoint(args, agent, global_step)
@@ -475,7 +507,6 @@ if __name__ == "__main__":
                     # merge back actions and logprobs
                     action_ = merge_actions(train_ids, action, opp_action)
 
-                    update_lstm_states(next_lstm_states, player_id, learning_id, lstm_s, other_lstm)
                     # update buffers
                     insert_at_indices(obs, steps, train_ids, next_obs)
                     insert_at_indices(values, steps, train_ids, value.flatten())
@@ -484,6 +515,9 @@ if __name__ == "__main__":
                     insert_at_indices(masks, steps, train_ids, next_mask)
                 else:
                     action_ = opp_action
+
+            # update lstm states
+            update_lstm_states(next_lstm_states, player_id, learning_id, learner_lstm, opp_lstm)
 
             # merge the actions back together
             next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
@@ -547,53 +581,68 @@ if __name__ == "__main__":
                 nextvalues = values[t + 1] * (steps > t).int()
                 delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+                dones[t] = dones[t] * (steps > t).int()
             returns = advantages + values
 
-        # todo add back support for framestacking
         # if args.framestack > 1:
         #     obs = torch.zeros(
         #         (args.num_steps, args.num_envs) + (np.array(envs.single_observation_space.shape).prod(),)).to(device)
         # else:
-        n_transitions = torch.sum(steps)
-        b_obs = torch.zeros((n_transitions,) + envs.single_observation_space.shape).to(device)
-        b_logprobs = torch.zeros((n_transitions)).to(device)
-        b_actions = torch.zeros((n_transitions,) + envs.single_action_space.shape).to(device)
-        b_masks = torch.zeros((n_transitions, envs.single_action_space.n), dtype=torch.bool).to(device)
-        b_dones = torch.zeros((n_transitions)).to(device)
-        b_advantages = torch.zeros((n_transitions)).to(device)
-        b_returns = torch.zeros((n_transitions)).to(device)
-        b_values = torch.zeros((n_transitions)).to(device)
-        # todo what's the lstm size?
-        b_hidden = torch.zeros((n_transitions, 128)).to(device)
+        # n_transitions = torch.sum(steps)
+        # b_obs = torch.zeros((n_transitions,) + envs.single_observation_space.shape).to(device)
+        # b_logprobs = torch.zeros((n_transitions)).to(device)
+        # b_actions = torch.zeros((n_transitions,) + envs.single_action_space.shape).to(device)
+        # b_masks = torch.zeros((n_transitions, envs.single_action_space.n), dtype=torch.bool).to(device)
+        # b_dones = torch.zeros((n_transitions)).to(device)
+        # b_advantages = torch.zeros((n_transitions)).to(device)
+        # b_returns = torch.zeros((n_transitions)).to(device)
+        # b_values = torch.zeros((n_transitions)).to(device)
 
         # flatten the batch and cut-off the trajectories
-        j = 0
-        # fill in full batch
-        for i in range(args.num_envs):
-            # todo inject LSTM state here and make sure randomisation is correct
-            b_obs[j:j+steps[i]] = obs[:steps[i], i]
-            b_logprobs[j:j+steps[i]] = logprobs[:steps[i], i]
-            b_actions[j:j+steps[i]] = actions[:steps[i], i]
-            b_masks[j:j+steps[i]] = masks[:steps[i], i]
-            b_dones[j:j+steps[i]] = dones[:steps[i], i]
-            b_advantages[j:j+steps[i]] = advantages[:steps[i], i]
-            b_returns[j:j+steps[i]] = returns[:steps[i], i]
-            b_values[j:j+steps[i]] = values[:steps[i], i]
-            b_hidden[j:j+steps[i]] = initial_lstm_state[:steps[i], i]
-            # initial_lstm_state[0][0, 0, :127]
-            j += steps[i]
+        # j = 0
+        # # fill in full batch
+        # for i in range(args.num_envs):
+        #     # todo inject LSTM state here and make sure randomisation is correct
+        #     b_obs[j:j+steps[i]] = obs[:steps[i], i]
+        #     b_logprobs[j:j+steps[i]] = logprobs[:steps[i], i]
+        #     b_actions[j:j+steps[i]] = actions[:steps[i], i]
+        #     b_masks[j:j+steps[i]] = masks[:steps[i], i]
+        #     b_dones[j:j+steps[i]] = dones[:steps[i], i]
+        #     b_advantages[j:j+steps[i]] = advantages[:steps[i], i]
+        #     b_returns[j:j+steps[i]] = returns[:steps[i], i]
+        #     b_values[j:j+steps[i]] = values[:steps[i], i]
+        #     # b_hidden[j:j+steps[i]] = initial_lstm_state #[:steps[i], i]
+        #     # b_hidden[j:j+steps[i]] = initial_lstm_state[:steps[i], i]
+        #     # initial_lstm_state[0][0, 0, :127]
+        #     j += steps[i]
+
+        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+        b_logprobs = logprobs.reshape(-1)
+        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+        b_masks = masks.reshape((-1,) + (envs.single_action_space.n, ))
+        b_dones = dones.reshape(-1)
+        b_advantages = advantages.reshape(-1)
+        b_returns = returns.reshape(-1)
+        b_values = values.reshape(-1)
 
         # Optimizing the policy and value network
-        b_inds = np.arange(n_transitions)
+        assert args.num_envs % args.num_minibatches == 0
+        envsperbatch = args.num_envs // args.num_minibatches
+        envinds = np.arange(args.num_envs)
+        flatinds = np.arange(args.batch_size).reshape(args.num_steps, args.num_envs)
         clipfracs = []
         for epoch in range(args.update_epochs):
-            np.random.shuffle(b_inds)
-            for start in range(0, n_transitions, args.minibatch_size):
-                end = start + args.minibatch_size
-                mb_inds = b_inds[start:end]
+            np.random.shuffle(envinds)
+            for start in range(0, args.num_envs, envsperbatch):
+                end = start + envsperbatch
+                mbenvinds = envinds[start:end]
+                mb_inds = flatinds[:, mbenvinds].ravel()  # be really careful about the index
+
+
                 # todo maybe when we do the flattening we could rework it for that purpose
                 # todo lstm shuffling requires the observations in order [0-15] [16-31] as it steps through them
-                # todo do we even need to shuffle here?
+                # todo do we need to shuffle here?
+                # lstm_state = torch.zeros((args.n_players, 2, agent.lstm.num_layers, args.num_envs, agent.lstm.hidden_size)).to(device)
                 _, newlogprob, entropy, newvalue, _ = agent.get_action_and_value(
                     b_obs[mb_inds],
                     (initial_lstm_state[0][:, mbenvinds], initial_lstm_state[1][:, mbenvinds]),

@@ -91,6 +91,7 @@ class PPOLSTM(nn.Module):
         done = done.reshape((-1, batch_size))
         new_hidden = []
         for h, d in zip(hidden, done):
+            # iterate over each environment in the batch
             h, lstm_state = self.lstm(
                 h.unsqueeze(0),
                 (
