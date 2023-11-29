@@ -10,9 +10,10 @@ from collections import defaultdict, OrderedDict
 
 agent = ["PPO"] #, "PPO_LSTM"]
 games = [ "Stratego", "TicTacToe", "Diamant", "ExplodingKittens", "LoveLetter", "DotsAndBoxes", "SushiGo"] # "TAG/TicTacToe", "TAG/Stratego",
+stat_type = "sp" #  "sp" or "opp"
 opponents = ["random", "osla", "mcts"]
 n_players = 2
-metric = "wins" # "speed"   wins, rewards, length
+reward_type = "SCORE"
 ENTITY = "martinballa"  # '<entity>'
 project = "PyTAG-SP"  # '<project>'
 api = wandb.Api()
@@ -21,50 +22,22 @@ window = 100
 results = {}
 result_lst = []
 
-if metric == "wins":
-    Y_RANGES = [0, 1]
-    METRIC_NAME = "charts/episodic_wins"
-elif metric == "length":
-    Y_RANGES = [0, 1]
-    METRIC_NAME = "charts/episodic_length"
-elif metric == "speed":
-    Y_RANGES = [0, 1]
-    METRIC_NAME = "charts/SPS"
-else:
-    Y_RANGES = [-1, 1]
-    METRIC_NAME = "charts/episodic_return"
-# for game in games:
-#     # for opponent in opponents:
-#         for n_player in n_players:
-#             if "Stratego" in game and n_player == 4:
-#                 continue
-#             if "TicTacToe" in game and n_player == 4:
-#                 continue
-#
-#             filename = os.path.expanduser(f"~/data/pyTAG/plots/merged/{metric}_{game}_{n_player}_players.png")
-#             metrics = defaultdict(list)
-#             title = f"{n_player} Player {game[4:]}" # vs {opponent}"
-#             ncols = 2
-
-filters = ["n_players", "opponent", "lstm", "env_id" ]
-filter_values = ["", "osla", -1, ""]
-labels = []
-# labels = [""]
-
-groups = {}
-summaries = []
 
 # collect all the data first and then plot them
 runs = api.runs(f"{ENTITY}/{project}")
 
 # filter wrong seed and unfinished runs
-runs = [run for run in runs if run.config["seed"] != 1 and run.state == "finished" and run.config["n_players"] == n_players and run.config["learning_rate"] == 0.001]
+runs = [run for run in runs if run.config["seed"] != 1 and run.state == "finished" and
+        run.config["n_players"] == n_players and run.config["learning_rate"] == 0.001 and
+        run.config["reward_type"] == reward_type]
 
 # agents = defaultdict(list) #{list}
 wins = defaultdict(list)
 ties = defaultdict(list)
 losses = defaultdict(list)
 score_diffs = defaultdict(list)
+
+filter_1m = True
 
 # todo get final stats -> maybe summary?
 # average final stats
@@ -81,44 +54,105 @@ for run in runs:
 
         # print(runs[0].summary[f"eval/{opp}/mean_return"])
 
-# todo create plots
 full_stats = defaultdict(list)
-metrics = ["episodic_wins", "episodic_ties", "episodic_losses", "episodic_score_diff"]
-for run in runs:
-    game = run.config["env_id"]
+if stat_type == "opp":
 
-    keys = ["charts/global_step"]
-    for metric in metrics:
-        for opp in opponents:
-            full_stats[f"{game}_{opp}_{metric}"] = run.history(keys=["global_step", f"eval/{opp}/{metric}"], samples=5000)
+    metrics = ["episodic_wins", "episodic_ties", "episodic_losses", "episodic_score_diff"]
+    for run in runs:
+        game = run.config["env_id"]
 
-# todo combined plots - all agents on one plot?
-window = 10
-titles = ["win rate", "tie rate", "loss rate", "score difference"]
-metrics = ["episodic_wins", "episodic_ties", "episodic_losses", "episodic_score_diff"]
-for metric, title in zip(metrics, titles):
-    for game in games:
-        fig, ax = plt.subplots(figsize=(6, 4))
-        if metric != "episodic_score_diff":
-            ax.set_ylim([-0.1, 1.1])
-        for opp in opponents:
-            filename = os.path.expanduser(f"~/data/pyTAG-SP/plots/{game}/{game}_{metric}_{n_players}p.png")
-            if len(full_stats[f"{game}_{opp}_{metric}"]) == 0:
-                print(f"no data for {game}_{opp}_{metric}")
+        keys = ["charts/global_step"]
+        for metric in metrics:
+            for opp in opponents:
+                full_stats[f"{game}_{opp}_{metric}"] = run.history(keys=["global_step", f"eval/{opp}/{metric}"], samples=5000)
+
+    # todo combined plots - all agents on one plot?
+    window = 10
+    titles = ["win rate", "tie rate", "loss rate", "score difference"]
+    metrics = ["episodic_wins", "episodic_ties", "episodic_losses", "episodic_score_diff"]
+    for metric, title in zip(metrics, titles):
+        for game in games:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            if metric != "episodic_score_diff":
+                ax.set_ylim([-0.1, 1.1])
+            for opp in opponents:
+                filename = os.path.expanduser(f"~/data/pyTAG-SP/plots/{game}/{game}_{metric}_{n_players}p.png")
+                if filter_1m:
+                    filename = os.path.expanduser(f"~/data/pyTAG-SP/plots/{game}/{game}_{metric}_{n_players}p_1m.png")
+                if len(full_stats[f"{game}_{opp}_{metric}"]) == 0:
+                    print(f"no data for {game}_{opp}_{metric}")
+                    continue
+                df = full_stats[f"{game}_{opp}_{metric}"].sort_values("global_step").rolling(window=window, min_periods=window).mean()
+                if filter_1m:
+                    df = df[df["global_step"] < int(1e6)]
+
+                ax.plot(df["global_step"], df[f"eval/{opp}/{metric}"], label=f"{opp}")
+
+            ncol=2,
+            ax.legend(ncol=ncol, frameon=False)  # bbox_to_anchor=(0.90, 0.1)) #, loc='lower right', frameon=False)
+            plt.xlabel("steps", labelpad=0)
+            plt.ylabel(title)
+            plt.title(f"{n_players} players {game} {title}")
+            if not os.path.exists(os.path.dirname(filename)):
+                os.makedirs(os.path.dirname(filename))
+            plt.savefig(filename, bbox_inches="tight", dpi='figure', pad_inches=0)
+            plt.clf()
+elif stat_type == "sp":
+    # todo implement self-play stats
+    metrics = ["episodic_player_scores", "episodic_wins", "episodic_losses", "episodic_ties" , "episodic_score_diff", "episodic_return", "episodic_length", "episodic_outcomes", "total_ep_length"]
+    for run in runs:
+        game = run.config["env_id"]
+
+        keys = ["charts/global_step"]
+        for metric in metrics:
+            full_stats[f"{game}_{metric}"] = run.history(keys=["global_step", f"charts/{metric}"], samples=5000)
+
+    # todo combined plots - all agents on one plot?
+    window = 100
+    titles = metrics #["win rate", "tie rate", "loss rate", "score difference"]
+    # metrics = ["episodic_wins", "episodic_ties", "episodic_losses", "episodic_score_diff"]
+    for metric, title in zip(metrics, titles):
+        for game in games:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            if not ["score" not in metric and "length" in metric]:
+                ax.set_ylim([-0.1, 1.1])
+            filename = os.path.expanduser(f"~/data/pyTAG-SP/plots/{game}/sp_{game}_{metric}_{n_players}p.png")
+            if filter_1m:
+                filename = os.path.expanduser(f"~/data/pyTAG-SP/plots/{game}/sp_{game}_{metric}_{n_players}p_1m.png")
+            if len(full_stats[f"{game}_{metric}"]) == 0:
+                print(f"no data for {game}_{metric}")
                 continue
-            df = full_stats[f"{game}_{opp}_{metric}"].sort_values("global_step").rolling(window=window, min_periods=window).mean()
 
-            ax.plot(df["global_step"], df[f"eval/{opp}/{metric}"], label=f"{opp}")
+            df = full_stats[f"{game}_{metric}"]
+            if filter_1m:
+                df = df[df["global_step"] < int(1e6)]
+            df = df.sort_values("global_step").rolling(window=window, min_periods=window)
+            mean = df.mean()
+            sem = df.sem()
+            # sem = full_stats[f"{game}_{metric}"].sort_values("global_step").rolling(window=window, min_periods=window).sem()
+            # if filter_1m:
+            #     df = df[df["global_step"] < int(1e6)]
+            #     sem = sem[sem["global_step"] < int(1e6)]
+            # mean = full_stats[f"{game}_{metric}"].sort_values("global_step").rolling(window=window, min_periods=window).mean()
+            # total_steps = full_stats[f"{game}_{metric}"].rolling(window=window, min_periods=window).max()
 
-        ncol=2,
-        ax.legend(ncol=ncol, frameon=False)  # bbox_to_anchor=(0.90, 0.1)) #, loc='lower right', frameon=False)
-        plt.xlabel("2.5e6 steps", labelpad=0)
-        plt.ylabel(title)
-        plt.title(f"{n_players} players {game} {title}")
-        if not os.path.exists(os.path.dirname(filename)):
-            os.makedirs(os.path.dirname(filename))
-        plt.savefig(filename, bbox_inches="tight", dpi='figure', pad_inches=0)
-        plt.clf()
+            total_steps = np.linspace(0, mean["global_step"].max(), len(mean))
+            kwargs = dict(alpha=0.2, linewidths=0) #, color=col, zorder=10 - counter)
+            mean = mean["charts/" + metric]
+            sem = sem["charts/" + metric]
+            ax.fill_between(total_steps, mean - sem, mean + sem, **kwargs, zorder=10)
+            ax.plot(total_steps, mean, label=f"SP", zorder=100)
+
+            # ncol=2,
+            # ax.legend(ncol=ncol, frameon=False)  # bbox_to_anchor=(0.90, 0.1)) #, loc='lower right', frameon=False)
+            plt.xlabel("steps", labelpad=0)
+            plt.ylabel(title)
+            plt.title(f"{n_players} players {game} {title} self-play")
+            if not os.path.exists(os.path.dirname(filename)):
+                os.makedirs(os.path.dirname(filename))
+            plt.savefig(filename, bbox_inches="tight", dpi='figure', pad_inches=0)
+            plt.clf()
+        plt.close("all")
 print("all done")
 
 # from previous plots
