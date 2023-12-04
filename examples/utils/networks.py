@@ -44,7 +44,7 @@ class PPONet(nn.Module):
         logits = self.actor(hidden)
         if mask is not None:
             neg_inf = torch.finfo(logits.dtype).min
-            logits = torch.where(mask, logits, neg_inf)
+            logits = torch.where(mask, logits, torch.tensor(neg_inf, dtype=logits.dtype, device=logits.device))
         # if torch.isnan(logits).any():
         #     print("NAN in logits")
         probs = Categorical(logits=logits)
