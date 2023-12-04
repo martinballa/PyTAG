@@ -43,10 +43,15 @@ class PPONet(nn.Module):
         hidden = self.network(x)
         logits = self.actor(hidden)
         if mask is not None:
-            logits = torch.where(mask, logits, torch.tensor(-1e+8, device=logits.device))
+            neg_inf = torch.finfo(logits.dtype).min
+            logits = torch.where(mask, logits, neg_inf)
+        # if torch.isnan(logits).any():
+        #     print("NAN in logits")
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
+            if (~mask[[i for i in range(len(action))], action]).any():
+                print("invalid action sampled")
         return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
 class PPOLSTM(nn.Module):
