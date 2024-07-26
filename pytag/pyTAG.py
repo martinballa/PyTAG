@@ -61,14 +61,14 @@ class PyTAG():
         GameType = jpype.JClass("games.GameType")
 
         # Initialize the java environment
-        gameType = GameType.valueOf(Utils.getArg([""], "game", game_id))
+        self.gameType = GameType.valueOf(Utils.getArg([""], "game", game_id))
 
         if agent_ids[0] == "mcts":
             agents = [get_mcts_with_params(f"~/data/pyTAG/MCTS_for_{game_id}.json")() for agent_id in agent_ids]
         else:
             agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
         self._playerID = agent_ids.index("python") # if multiple python agents this is the first one
-        self._java_env = PyTAGEnv(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
+        self._java_env = PyTAGEnv(self.gameType, None, jpype.java.util.ArrayList(agents), seed, True)
 
         # Construct action/observation space
         self._java_env.reset()
@@ -82,6 +82,16 @@ class PyTAG():
 
     def get_action_tree_shape(self):
         return self._action_tree_shape
+
+    def evaluate(self, wrapped_agent, seed=432, useGUI=True, repetitions=5):
+        # todo decide on how opponents are handled and the random seed
+        # todo what should the evaluation return?
+        """
+        """
+        agent_ids = ["random", "random"]
+        agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
+        agents.insert(0, wrapped_agent)
+        self._java_env.evaluate(self.gameType, None, jpype.java.util.ArrayList(agents), seed, True, None, useGUI, repetitions)
 
     def reset(self):
         self._java_env.reset()
