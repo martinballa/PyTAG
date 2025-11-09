@@ -13,6 +13,7 @@ class RandomAgent():
 
     def getAction(self, gameState, possibleActions):
         rnd_action = random.choice(possibleActions)
+        time.sleep(0.1)
         return rnd_action
 
 def get_wrapped_agent(agent, delay_ms=-1):

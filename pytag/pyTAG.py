@@ -83,15 +83,13 @@ class PyTAG():
     def get_action_tree_shape(self):
         return self._action_tree_shape
 
-    def evaluate(self, wrapped_agent, seed=432, useGUI=True, repetitions=5):
+    def evaluate(self, wrapped_agent, seed:int=432, useGUI:bool=True, repetitions:int=5, randomizeParameters:bool=False, detailedStatistics:bool=False):
         # todo decide on how opponents are handled and the random seed
         # todo what should the evaluation return?
-        """
-        """
         agent_ids = ["random", "random"]
         agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
         agents.insert(0, wrapped_agent)
-        self._java_env.evaluate(self.gameType, None, jpype.java.util.ArrayList(agents), seed, True, None, useGUI, repetitions)
+        self._java_env.evaluate(self.gameType, None, jpype.java.util.ArrayList(agents), seed, True, None, useGUI, repetitions, False, False)
 
     def reset(self):
         self._java_env.reset()

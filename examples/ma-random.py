@@ -7,7 +7,7 @@ if __name__ == "__main__":
     EPISODES = 100
     players = ["python", "python", "python"]
     supported_games = list_supported_games()
-    env = MultiAgentPyTAG(players, game_id="SushiGo", obs_type="json")
+    env = MultiAgentPyTAG(players, game_id="Catan", obs_type="json")
     done = False
 
     # these are to keep track of agent specific statistics
