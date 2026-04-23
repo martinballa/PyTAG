@@ -79,7 +79,7 @@ def parse_args():
     parser.add_argument("--target-kl", type=float, default=None,
         help="the target KL divergence threshold")
     # game related args
-    parser.add_argument('--opponent', type=str, default='random', choices=["random", "osla", "mcts"])
+    parser.add_argument('--opponent', type=str, default='random')
     parser.add_argument("--n-players", type=int, default=2,
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)

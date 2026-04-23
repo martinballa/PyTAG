@@ -18,28 +18,17 @@ def list_supported_games(as_json=False):
         print("starting JVM")
         print(f"Loading JAR from: {tag_jar}") and print(f"File exists: {os.path.exists(tag_jar)}")
         jpype.startJVM(classpath=[tag_jar], convertStrings=False)
+     #   jpype.startJVM("--add-opens=java.base/java.lang=ALL-UNNAMED", classpath=[tag_jar], convertStrings=False)
     PyTAGEnv = jpype.JClass("core.PyTAG")
     if as_json:
         return json.loads(str(PyTAGEnv.getSupportedGamesJSON()))
     return PyTAGEnv.getSupportedGames()
 
-def get_agent_class(agent_name):
-    if agent_name == "random":
-        return jpype.JClass("players.simple.RandomPlayer")
-    if agent_name == "mcts":
-        return jpype.JClass("players.mcts.MCTSPlayer")
-    if agent_name == "osla":
-        return jpype.JClass("players.simple.OSLAPlayer")
-    if agent_name == "python":
-        return jpype.JClass("players.python.PythonAgent")
-    return None
-
-def get_mcts_with_params(json_path):
-    PlayerFactory = jpype.JClass("players.PlayerFactory")
-    with open(os.path.expanduser(json_path)) as json_file:
-        json_string = json.load(json_file)
-    json_string = str(json_string).replace('\'', '\"') # JAVA only uses " for string
-    return jpype.JClass("players.mcts.MCTSPlayer")(PlayerFactory.fromJSONString(json_string))
+def get_agent(data):
+    if data == "python":
+        return jpype.JClass("players.python.PythonAgent")()
+    player_factory = jpype.JClass("players.PlayerFactory")
+    return player_factory.createPlayer(data)
 
 # create the game registry when PyTAG is loaded
 _game_registry = list_supported_games(as_json=True)
@@ -63,7 +52,7 @@ class PyTAG():
         tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
         jpype.addClassPath(tag_jar)
         if not jpype.isJVMStarted():
-            jpype.startJVM(convertStrings=False)
+            jpype.startJVM("--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
 
         # access to the java classes
         PyTAGEnv = jpype.JClass("core.PyTAG")
@@ -73,10 +62,7 @@ class PyTAG():
         # Initialize the java environment
         gameType = GameType.valueOf(Utils.getArg([""], "game", game_id))
 
-        if agent_ids[0] == "mcts":
-            agents = [get_mcts_with_params(f"~/data/pyTAG/MCTS_for_{game_id}.json")() for agent_id in agent_ids]
-        else:
-            agents = [get_agent_class(agent_id)() for agent_id in agent_ids]
+        agents = [get_agent(agent_id) for agent_id in agent_ids]
         self._playerID = agent_ids.index("python") # if multiple python agents this is the first one
         self._java_env = PyTAGEnv(gameType, None, jpype.java.util.ArrayList(agents), seed, True)
 
