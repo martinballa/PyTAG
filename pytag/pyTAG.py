@@ -7,10 +7,17 @@ import jpype.imports
 import numpy as np
 from typing import List
 def list_supported_games(as_json=False):
-    tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
-    jpype.addClassPath(tag_jar)
+    tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
+    # 2. Hard Stop if the JAR is missing
+    if not os.path.exists(tag_jar):
+        raise FileNotFoundError(f"CRITICAL: Could not find JAR at {tag_jar}. "
+                                f"Check your folder structure!")
+
+    # jpype.addClassPath(tag_jar)
     if not jpype.isJVMStarted():
-        jpype.startJVM(convertStrings=False)
+        print("starting JVM")
+        print(f"Loading JAR from: {tag_jar}") and print(f"File exists: {os.path.exists(tag_jar)}")
+        jpype.startJVM(classpath=[tag_jar], convertStrings=False)
     PyTAGEnv = jpype.JClass("core.PyTAG")
     if as_json:
         return json.loads(str(PyTAGEnv.getSupportedGamesJSON()))
@@ -42,6 +49,9 @@ class PyTAG():
     Note that the java jar package is expected to be in the jars folder of the same directory as this file.
     """
     def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+        self.agent_ids = agent_ids
+        self.game_id = game_id
+        self.seed = seed
         self._last_obs_vector = None
         self._last_action_mask = None
         self._rnd = random.Random(seed)
@@ -50,7 +60,7 @@ class PyTAG():
         assert game_id in _game_registry, f"Game {game_id} not supported. Supported games are {_game_registry}"
         assert _game_registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
         # start up the JVM
-        tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
+        tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
         jpype.addClassPath(tag_jar)
         if not jpype.isJVMStarted():
             jpype.startJVM(convertStrings=False)

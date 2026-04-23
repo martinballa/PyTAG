@@ -1,12 +1,12 @@
 # various helper functions
 import gymnasium as gym
-from gymnasium.wrappers.frame_stack import FrameStack
+from gymnasium.wrappers import FrameStackObservation as FrameStack
 import numpy as np
 import torch
 
 import jpype
 import jpype.imports
-from utils.wrappers import StrategoWrapper, SushiGoWrapper
+from pytag.utils.wrappers import StrategoWrapper, SushiGoWrapper
 
 
 def make_env(env_id, seed, opponent, n_players, framestack=1, obs_type="vector"):
