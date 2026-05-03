@@ -201,7 +201,7 @@ if __name__ == "__main__":
             if args.framestack > 1:
                 next_obs = next_obs.view(next_obs.shape[0], -1)
 
-            if "episode" in info: # todo not sure if it's faster than just iterationg over _episode
+            if "episode" in info: # todo not sure if it's faster than just iterating over _episode
                 for i in range(args.num_envs):
                     if info["_episode"][i]:
                         # print(f"global_step={global_step}, episodic_return={info['episode']['r'][i]}")
