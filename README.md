@@ -6,37 +6,56 @@
 [![twitter](https://img.shields.io/twitter/follow/gameai_qmul?style=social)](https://twitter.com/intent/follow?screen_name=gameai_qmul)
 [![](https://img.shields.io/github/stars/martinballa/PyTAG.svg?label=Stars&style=social)](https://github.com/GAIGResearch/TabletopGames)
 
-
-PyTAG allows interaction with the TAG framework from Python. This repository contains all the python code required to run Reinforcement Learning agents.
-The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework, but it is not limited to RL as using the python-java bridge all public functions and variables are accessible from python.
+PyTAG allows interaction with the TAG framework from Python. This repository contains all the python code required to
+run Reinforcement Learning agents.
+The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework, but it is not limited to RL as using
+the python-java bridge all public functions and variables are accessible from python.
 If you want to learn more about TAG, please visit the [website](http://tabletopgames.ai).
 
-You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab notebook to try out PyTAG before installing it on your own machine.
+You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab
+notebook to try out PyTAG before installing it on your own machine.
 
 ## Setting up
-The project requires Java with minimum version 8. We recommend installing pytag in a new virtual environment. To install pytag you may follow the steps below.
+
+TAG requires Java with minimum version 21. We recommend installing pytag in a new virtual environment. To 
+install
+pytag you may follow the steps below.
+
 - 1, Clone this repository.
 - 2, Install PyTAG as a python package ```pip install -e .```
-- 3, Run ```jar_setup.py``` to download the latest jar file for TAG or see the section on "Getting the TAG jar files" below for more options.
+- 3, Run ```jar_setup.py``` to download the latest jar file for TAG or see the section on "Getting the TAG jar files"
+  below for more options. 
 - 4, (optional) install pytag with the additional dependencies to run the baselines ```pip install -e .[examples]```
-- 5, (optional) you may test your installation by running the examples in ```examples/``` for instance ```pt-action-masking.py```.
+- 5, (optional) you may test your installation by running the examples in ```examples/``` for instance
+  ```pt-action-masking.py```.
 
 ### Getting the TAG jar files
-Pytag is looking for the TAG jar files in the ```pytag/jars/``` folder. To get the latest jar files you may run ```jar_setup.py``` which will download the latest jar files and unpack them at the correct location.
-Or alternatively you may manually download it from [Google drive](https://drive.google.com/file/d/1uPNoZkdI4rJiFyNyXFVun_VcAlN3QIVQ/view?usp=drive_link)  and place the jar files in the ```pytag/jars/``` folder.
 
-In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you need to create new jar files from TAG and place them in the ```pytag/jars/``` folder.
+Pytag is looking for the TAG jar file in the ```pytag/jars/``` folder. To get the latest jar file you may run
+```jar_setup.py``` which will download the latest jar files and unpack them at the correct location.
+Or alternatively you may manually download it
+from [Google drive](https://drive.google.com/file/d/1wIM2xPE5tqvVzO931t3xcVYWk7VCr6i8/view?usp=drive_link)  and place
+the jar files in the ```pytag/jars/``` folder.
+
+In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you
+need to create new jar files from TAG and place them in the ```pytag/jars/``` folder. 
+For instructions on building the full TAG.jar file, see the [TAG website](https://tabletopgames.ai/wiki/maven); 
+although this just requires a `mvn install` command, then copy the generated `target/TAG.jar` file to the `pytag/jars/` folder.
 
 ## Getting started
 
-The examples folder provides a few python scripts that may serve as a starting point for using the framework. 
-```pt-action-masking.py``` demonstrates how the action masking may be used to sample random valid actions manually. ```gym-action-masking.py``` extends this to using the action masking in a gym environment. ```gym-random.py``` shows how the built-in action sampler may be used.
+The examples folder provides a few python scripts that may serve as a starting point for using the framework.
+```pt-action-masking.py``` demonstrates how the action masking may be used to sample random valid actions manually.
+```gym-action-masking.py``` extends this to using the action masking in a gym environment. ```gym-random.py``` shows how
+the built-in action sampler may be used.
 ```ma-random.py``` demonstrates how multiple python agents may be controlled.
-The remaining scripts are used to run the PPO baselines from the IEEE CoG 23' paper. ```ppo-eval.py``` allows you to load a trained PPO model for evaluation.
+The remaining scripts are used to run the PPO baselines from the IEEE CoG 23' paper. ```ppo-eval.py``` allows you to
+load a trained PPO model for evaluation.
 
 ## Citing Information
 
 To cite PyTAG in your work, please cite this paper:
+
 ```
 @article{balla2023pytag,
   title={PyTAG: Challenges and Opportunities for Reinforcement Learning in Tabletop Games},
@@ -47,6 +66,7 @@ To cite PyTAG in your work, please cite this paper:
 ```
 
 To cite TAG in your work, please cite this paper:
+
 ```
 @inproceedings{gaina2020tag,
          author= {Raluca D. Gaina and Martin Balla and Alexander Dockhorn and Raul Montoliu and Diego Perez-Liebana},
@@ -58,10 +78,16 @@ To cite TAG in your work, please cite this paper:
 ```
 
 ## Contact and contribute
-The main method to contribute to our repository directly with code, or to suggest new features, point out bugs or ask questions about the project is through [creating new Issues on this github repository](https://github.com/GAIGResearch/TabletopGames/issues) or [creating new Pull Requests](https://github.com/GAIGResearch/TabletopGames/pulls). Alternatively, you may contact the authors of the papers listed above. 
+
+The main method to contribute to our repository directly with code, or to suggest new features, point out bugs or ask
+questions about the project is
+through [creating new Issues on this github repository](https://github.com/GAIGResearch/TabletopGames/issues)
+or [creating new Pull Requests](https://github.com/GAIGResearch/TabletopGames/pulls). Alternatively, you may contact the
+authors of the papers listed above.
 
 You can also find out more about the [QMUL Game AI Group](http://gameai.eecs.qmul.ac.uk/).
 
 ## Acknowledgements
 
-This work was partly funded by the EPSRC CDT in Intelligent Games and Game Intelligence (IGGI)  EP/L015846/1 and EPSRC research grant EP/T008962/1.
+This work was partly funded by the EPSRC CDT in Intelligent Games and Game Intelligence (IGGI)  EP/L015846/1 and EPSRC
+research grant EP/T008962/1.

@@ -28,7 +28,9 @@ class TagSingleplayerGym(gym.Env):
     def sample_rnd_action(self):
         return self._env.sample_rnd_action()
     
-    def reset(self):
+    def reset(self, seed=None, options=None):
+        if seed is not None:
+            self._env = PyTAG(agent_ids=self._env.agent_ids, game_id=self._env.game_id, seed=seed, obs_type=self._obs_type)
         obs, info = self._env.reset()
         return obs, info
 

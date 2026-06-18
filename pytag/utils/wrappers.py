@@ -8,10 +8,10 @@ import torch
 
 
 import gymnasium as gym
-from gymnasium.vector import VectorEnvWrapper
+from gymnasium.vector import VectorWrapper
 
 
-class MergeActionMaskWrapper(VectorEnvWrapper):
+class MergeActionMaskWrapper(VectorWrapper):
     def reset_wait(self, **kwargs):
         obs, infos = self.env.reset_wait(**kwargs)
         return obs, self._merge_action_masks(infos)
@@ -93,7 +93,7 @@ class SushiGoWrapper(gym.ObservationWrapper):
         obs = np.concatenate([score, round, played_cards, cards_in_hand, opp_played_cards, opp_scores])
         return obs
 
-class RecordEpisodeStatistics(gym.Wrapper):
+class RecordEpisodeStatistics(VectorWrapper):
     # Based on RecordEpisodeStatistics from gymnasium, but it checks whether the player has won the game
     """This wrapper will keep track of cumulative rewards and episode lengths.
 
@@ -111,7 +111,7 @@ class RecordEpisodeStatistics(gym.Wrapper):
             deque_size: The size of the buffers :attr:`return_queue` and :attr:`length_queue`
         """
         super().__init__(env)
-        self.num_envs = getattr(env, "num_envs", 1)
+        # self.num_envs = getattr(env, "num_envs", 1) # This is already a property of VectorWrapper
         self.episode_count = 0
         self.episode_start_times: np.ndarray = None
         self.episode_returns: Optional[np.ndarray] = None
@@ -120,7 +120,7 @@ class RecordEpisodeStatistics(gym.Wrapper):
         self.return_queue = deque(maxlen=deque_size)
         self.length_queue = deque(maxlen=deque_size)
         self.win_queue = deque(maxlen=deque_size)
-        self.is_vector_env = getattr(env, "is_vector_env", False)
+        # self.is_vector_env = getattr(env, "is_vector_env", False) # VectorWrapper IS a vector env
 
     def reset(self, **kwargs):
         """Resets the environment using kwargs and resets the episode returns and lengths."""
@@ -159,14 +159,14 @@ class RecordEpisodeStatistics(gym.Wrapper):
                 infos["episode"] = {
                     "r": np.where(dones, self.episode_returns, 0.0),
                     "l": np.where(dones, self.episode_lengths, 0),
-                    "w": [0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]],
+                    "w": [0 if final_inf is None else final_inf.get("has_won", 0) for final_inf in infos.get("final_info", [None] * self.num_envs)],
                     "t": np.where(
                         dones,
                         np.round(time.perf_counter() - self.episode_start_times, 6),
                         0.0,
                     ),
                 }
-                if self.is_vector_env:
+                if True: # it is a vector env
                     infos["_episode"] = np.where(dones, True, False)
             self.return_queue.extend(self.episode_returns[dones])
             self.length_queue.extend(self.episode_lengths[dones])
