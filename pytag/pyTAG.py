@@ -1,18 +1,33 @@
 import os, random, time
 import json
+import glob
 
 import jpype
 import jpype.imports
 
 import numpy as np
 from typing import List
+
+def _get_jvm_path():
+    """Find libjvm, preferring JAVA_HOME if set over jpype's PATH-based detection."""
+    java_home = os.environ.get("JAVA_HOME")
+    if java_home:
+        candidates = (
+            glob.glob(os.path.join(java_home, "lib", "server", "libjvm.so"))   # Linux
+            + glob.glob(os.path.join(java_home, "lib", "libjvm.dylib"))         # macOS
+            + glob.glob(os.path.join(java_home, "**", "libjvm.so"), recursive=True)
+        )
+        if candidates:
+            return candidates[0]
+    return jpype.getDefaultJVMPath()
+
 def list_supported_games(as_json=False):
     tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
     if not os.path.exists(tag_jar):
         raise FileNotFoundError(f"TAG.jar not found at {tag_jar}. Run jar_setup.py to download it.")
     jpype.addClassPath(tag_jar)
     if not jpype.isJVMStarted():
-        jpype.startJVM("--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
+        jpype.startJVM(_get_jvm_path(), "--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
     PyTAGEnv = jpype.JClass("core.PyTAG")
     if as_json:
         return json.loads(str(PyTAGEnv.getSupportedGamesJSON()))
@@ -46,7 +61,7 @@ class PyTAG():
         tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
         jpype.addClassPath(tag_jar)
         if not jpype.isJVMStarted():
-            jpype.startJVM("--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
+            jpype.startJVM(_get_jvm_path(), "--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
 
         # access to the java classes
         PyTAGEnv = jpype.JClass("core.PyTAG")
