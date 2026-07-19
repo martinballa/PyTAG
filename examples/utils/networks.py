@@ -43,7 +43,7 @@ class PPONet(nn.Module):
         hidden = self.network(x)
         logits = self.actor(hidden)
         if mask is not None:
-            logits = torch.where(mask, logits, torch.tensor(-1e+8, device=logits.device))
+            logits = torch.where(mask, logits, torch.full_like(logits, torch.finfo(logits.dtype).min))
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
@@ -110,7 +110,7 @@ class PPOLSTM(nn.Module):
         hidden, lstm_state = self.get_states(x, lstm_state, done)
         logits = self.actor(hidden)
         if mask is not None:
-            logits = torch.where(mask, logits, torch.tensor(-1e+8, device=logits.device))
+            logits = torch.where(mask, logits, torch.full_like(logits, torch.finfo(logits.dtype).min))
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
