@@ -1,5 +1,6 @@
 # Gym wrappers for PyTAG
 import gymnasium as gym
+import random
 
 from pytag import PyTAG, MultiAgentPyTAG
 from typing import Dict, List
@@ -28,7 +29,10 @@ class TagSingleplayerGym(gym.Env):
     def sample_rnd_action(self):
         return self._env.sample_rnd_action()
     
-    def reset(self):
+    def reset(self, *, seed: int | None = None, options: dict | None = None):
+        # Gymnasium passes seed/options into reset; PyTAG does not accept them.
+        if seed is not None:
+            self._env._rnd = random.Random(seed)
         obs, info = self._env.reset()
         return obs, info
 
