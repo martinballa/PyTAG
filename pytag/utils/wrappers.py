@@ -105,6 +105,7 @@ class RecordEpisodeStatistics(VectorWrapper):
         self.episode_lengths: Optional[np.ndarray] = None
         self.return_queue = deque(maxlen=deque_size)
         self.length_queue = deque(maxlen=deque_size)
+        self.win_queue = deque(maxlen=deque_size)
 
     def reset(self, **kwargs):
         obs, info = super().reset(**kwargs)
@@ -133,6 +134,7 @@ class RecordEpisodeStatistics(VectorWrapper):
             infos["_episode"] = np.where(dones, True, False)
             self.return_queue.extend(self.episode_returns[dones])
             self.length_queue.extend(self.episode_lengths[dones])
+            self.win_queue.extend(outcomes[dones])
             self.episode_count += num_dones
             self.episode_lengths[dones] = 0
             self.episode_returns[dones] = 0

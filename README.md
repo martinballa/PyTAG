@@ -6,20 +6,27 @@
 [![twitter](https://img.shields.io/twitter/follow/gameai_qmul?style=social)](https://twitter.com/intent/follow?screen_name=gameai_qmul)
 [![](https://img.shields.io/github/stars/martinballa/PyTAG.svg?label=Stars&style=social)](https://github.com/GAIGResearch/TabletopGames)
 
-
-PyTAG allows interaction with the TAG framework from Python. This repository contains all the python code required to run Reinforcement Learning agents.
-The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework, but it is not limited to RL as using the python-java bridge all public functions and variables are accessible from python.
+PyTAG allows interaction with the TAG framework from Python. This repository contains all the python code required to
+run Reinforcement Learning agents.
+The aim of PyTAG is to provide a Reinforcement Learning API for the TAG framework, but it is not limited to RL as using
+the python-java bridge all public functions and variables are accessible from python.
 If you want to learn more about TAG, please visit the [website](http://tabletopgames.ai).
 
-You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab notebook to try out PyTAG before installing it on your own machine.
+You may try [this](https://colab.research.google.com/drive/1WMVu9bFkxvwK7evD1sIkxcsrlhdRoY9d?usp=sharing) google colab
+notebook to try out PyTAG before installing it on your own machine.
 
 ## Setting up
-The project requires Java with minimum version 8. We recommend installing pytag in a new virtual environment. To install pytag you may follow the steps below.
+
+TAG requires Java with minimum version 21. We recommend installing pytag in a new virtual environment. To 
+install
+pytag you may follow the steps below.
+
 - 1, Clone this repository.
 - 2, Install PyTAG as a python package ```pip install -e .```
 - 3, Run ```python jar_setup.py``` to download the latest `TAG.jar` or see "Getting the TAG jar file" below for manual options.
 - 4, (optional) install pytag with the additional dependencies to run the baselines ```pip install -e .[examples]```
-- 5, (optional) you may test your installation by running the examples in ```examples/``` for instance ```pt-action-masking.py```.
+- 5, (optional) you may test your installation by running the examples in ```examples/``` for instance
+  ```pt-action-masking.py```.
 
 ### Getting the TAG jar file
 PyTAG requires a single `TAG.jar` file placed in the `pytag/jars/` folder. Running `jar_setup.py` will download it automatically:
@@ -28,7 +35,7 @@ python jar_setup.py
 ```
 Or download `TAG.jar` manually from [Google Drive](https://drive.google.com/file/d/1wIM2xPE5tqvVzO931t3xcVYWk7VCr6i8/view?usp=drive_link) and place it in `pytag/jars/`.
 
-In case you want to make changes to the Java framework (e.g. implementing the RL interfaces for a new game) you need to rebuild `TAG.jar` from the [TAG repository](https://github.com/GAIGResearch/TabletopGames) and replace the file in `pytag/jars/`.
+To build `TAG.jar` from source, see the [TAG wiki](https://tabletopgames.ai/wiki/maven): run `mvn install` in the TAG repository and copy `target/TAG.jar` to `pytag/jars/`.
 
 ## Supported games
 
@@ -90,10 +97,16 @@ To cite the TAG framework itself:
 ```
 
 ## Contact and contribute
-The main method to contribute to our repository directly with code, or to suggest new features, point out bugs or ask questions about the project is through [creating new Issues on this github repository](https://github.com/GAIGResearch/TabletopGames/issues) or [creating new Pull Requests](https://github.com/GAIGResearch/TabletopGames/pulls). Alternatively, you may contact the authors of the papers listed above. 
+
+The main method to contribute to our repository directly with code, or to suggest new features, point out bugs or ask
+questions about the project is
+through [creating new Issues on this github repository](https://github.com/GAIGResearch/TabletopGames/issues)
+or [creating new Pull Requests](https://github.com/GAIGResearch/TabletopGames/pulls). Alternatively, you may contact the
+authors of the papers listed above.
 
 You can also find out more about the [QMUL Game AI Group](http://gameai.eecs.qmul.ac.uk/).
 
 ## Acknowledgements
 
-This work was partly funded by the EPSRC CDT in Intelligent Games and Game Intelligence (IGGI)  EP/L015846/1 and EPSRC research grant EP/T008962/1.
+This work was partly funded by the EPSRC CDT in Intelligent Games and Game Intelligence (IGGI)  EP/L015846/1 and EPSRC
+research grant EP/T008962/1.

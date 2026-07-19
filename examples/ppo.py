@@ -3,6 +3,7 @@ import argparse
 import os
 import random
 import time
+import jpype
 from distutils.util import strtobool
 
 import gymnasium as gym
@@ -13,7 +14,8 @@ import torch.optim as optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
+import pytag.gym_wrapper
+from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
 from pytag.utils.common import make_env
 from utils.networks import PPONet
 
@@ -77,7 +79,7 @@ def parse_args():
     parser.add_argument("--target-kl", type=float, default=None,
         help="the target KL divergence threshold")
     # game related args
-    parser.add_argument('--opponent', type=str, default='random', choices=["random", "osla", "mcts"])
+    parser.add_argument('--opponent', type=str, default='random')
     parser.add_argument("--n-players", type=int, default=2,
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)
@@ -153,7 +155,12 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
-    next_obs, next_info = envs.reset()
+    try:
+        next_obs, next_info = envs.reset()
+    except jpype.JException as ex:
+        print("Java Exception during envs.reset():")
+        print(ex.stacktrace())
+        raise
     next_obs = torch.tensor(next_obs).to(device)
     if args.framestack > 1:
         next_obs = next_obs.view(next_obs.shape[0], -1)
@@ -182,14 +189,19 @@ if __name__ == "__main__":
             logprobs[step] = logprob
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
+            try:
+                next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
+            except jpype.JException as ex:
+                print("Java Exception during envs.step():")
+                print(ex.stacktrace())
+                raise
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
             if args.framestack > 1:
                 next_obs = next_obs.view(next_obs.shape[0], -1)
 
-            if "episode" in info: # todo not sure if it's faster than just iterationg over _episode
+            if "episode" in info: # todo not sure if it's faster than just iterating over _episode
                 for i in range(args.num_envs):
                     if info["_episode"][i]:
                         # print(f"global_step={global_step}, episodic_return={info['episode']['r'][i]}")

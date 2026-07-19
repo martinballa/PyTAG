@@ -30,7 +30,6 @@ class TagSingleplayerGym(gym.Env):
         return self._env.sample_rnd_action()
     
     def reset(self, *, seed: int | None = None, options: dict | None = None):
-        # Gymnasium passes seed/options into reset; PyTAG does not accept them.
         if seed is not None:
             self._env._rnd = random.Random(seed)
         obs, info = self._env.reset()
