@@ -8,17 +8,11 @@ import numpy as np
 from typing import List
 def list_supported_games(as_json=False):
     tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
-    # 2. Hard Stop if the JAR is missing
     if not os.path.exists(tag_jar):
-        raise FileNotFoundError(f"CRITICAL: Could not find JAR at {tag_jar}. "
-                                f"Check your folder structure!")
-
-    # jpype.addClassPath(tag_jar)
+        raise FileNotFoundError(f"TAG.jar not found at {tag_jar}. Run jar_setup.py to download it.")
+    jpype.addClassPath(tag_jar)
     if not jpype.isJVMStarted():
-        print("starting JVM")
-        print(f"Loading JAR from: {tag_jar}") and print(f"File exists: {os.path.exists(tag_jar)}")
-        jpype.startJVM(classpath=[tag_jar], convertStrings=False)
-     #   jpype.startJVM("--add-opens=java.base/java.lang=ALL-UNNAMED", classpath=[tag_jar], convertStrings=False)
+        jpype.startJVM("--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
     PyTAGEnv = jpype.JClass("core.PyTAG")
     if as_json:
         return json.loads(str(PyTAGEnv.getSupportedGamesJSON()))
@@ -87,19 +81,11 @@ class PyTAG():
                                        "has_won": int(self.terminal_reward(self._playerID))}
 
     def step(self, action):
-        # Verify
         if not self.is_valid_action(action):
-            # Execute a random action
             valid_actions = np.where(self._last_action_mask)[0]
             action = self._rnd.choice(valid_actions)
-            self._java_env.step(action)
-            # reward = -1
-        else:
-            self._java_env.step(action)
-            # reward = self.has_won(self._playerID)
-            reward = self.terminal_reward(self._playerID)
-            # if str(self._java_env.getPlayerResults()[self._playerID]) == "LOSE_GAME": reward = -1
-
+        self._java_env.step(action)
+        reward = self.terminal_reward(self._playerID)
         self._update_data()
         done = self._java_env.isDone()
         info = {"action_mask": self._last_action_mask,
@@ -139,7 +125,7 @@ class PyTAG():
 
 
     def getPlayerID(self):
-        return self._java_env.getPlayerID()
+        return int(self._java_env.getPlayerID())
 
     def has_won(self, player_id=0):
         return int(str(self._java_env.getPlayerResults()[player_id]) == "WIN_GAME")
@@ -151,6 +137,8 @@ class PyTAG():
             return 1.0
         elif player_result == "LOSE_GAME":
             return -1.0
+        elif player_result == "DRAW_GAME":
+            return 0.5
         else:
             return 0.0
 
@@ -163,9 +151,68 @@ class PyTAG():
                 results[i] = 1.0
             elif result == "LOSE_GAME":
                 results[i] = -1.0
+            elif player_result == "DRAW_GAME":
+                results[i] = 0.5
             else:
                 results[i] = 0.0
         return results
+
+class SelfPlayPyTAG(PyTAG):
+    """
+    Only running python agents for training - player IDs are randomised at each episode
+    player ids are return in info rather than as a dictionary
+    """
+    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+        super().__init__(["python"]*n_players, game_id, seed, obs_type)
+        # the training agent always gets our internal ID representation not the ids coming from the env directly
+        self._learner_id = 0
+        self.n_players = n_players
+        self.player_mapping = [i for i in range(n_players)]
+
+    # def getPlayerID(self):
+    #     # due to the randomisation of the player ids, we need to map the player id to the correct player
+    #     playerID = super().getPlayerID()
+    #     return self.player_mapping[playerID]
+
+    def getLearnerID(self):
+        return self._playerID
+        # return self._learner_id
+
+    def reset(self):
+        obs, info = super().reset()
+        self._playerID = self._rnd.randint(0, self.n_players-1)
+        # self._rnd.shuffle(self.player_mapping)
+        # self._learner_id = self._rnd.choice(self.player_mapping)
+        # self._playerID = self.player_mapping[self._learner_id]
+        info["player_id"] = self.getPlayerID()
+        info["learning_player"] = self.getLearnerID()
+        return obs, info
+
+    def step(self, action):
+        # print(f"player_id before update {self.getPlayerID()}")
+        # print(f"player id = {self.getPlayerID()} and learning player = {self.getLearnerID()}")
+        # print(f"action = {action}")
+        # print(f"obs = \n{self._last_obs_vector.reshape(3, 3)}")
+
+        obs, rewards, done, info = super().step(action)
+        info["player_id"] = self.getPlayerID()
+        info["learning_player"] = self.getLearnerID()
+        # info["has_won"] = int(self.terminal_reward(self.player_mapping[self._learner_id]))
+
+        # only learner player gets rewards
+        rewards = self.terminal_reward(self._playerID)
+        # rewards = self.terminal_reward(self.player_mapping[self._learner_id])
+
+        # print("------------- Transitioning to next -------------")
+        # print(f"player id = {self.getPlayerID()} and learning player = {self.getLearnerID()}")
+        # print(f"last action = {action}")
+        # print(f"obs = \n{obs.reshape(3, 3)}")
+        # print(f"rewards = {rewards} \n\n")
+
+        return obs, rewards, done, info
+
+
+
 
 class MultiAgentPyTAG(PyTAG):
     """If there are more than one python agents, the observations are handled as dictionaries with the agent id as key.

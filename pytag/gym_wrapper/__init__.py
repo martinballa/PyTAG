@@ -10,13 +10,19 @@ gym.envs.register(
 gym.envs.register(
      id='TAG/SushiGo-v0',
      entry_point='pytag.gym_wrapper.envs:TagSingleplayerGym',
-     kwargs={"game_id": "SushiGo", "agent_ids": ["python", "random"], "obs_type": "vector"}
+     kwargs={"game_id": "SushiGo", "agent_ids": ["python", "random"], "obs_type": "json"}
 )
 
 gym.envs.register(
-     id='TAG/ExplodingKittens-v0',
+     id='TAG/SushiGo-MA-v0',
+     entry_point='pytag.gym_wrapper.envs:TAGMultiplayerGym',
+     kwargs={"game_id": "SushiGo", "agent_ids": ["python", "python"], "obs_type": "json"}
+)
+
+gym.envs.register(
+     id='TAG/PowerGrid-v0',
      entry_point='pytag.gym_wrapper.envs:TagSingleplayerGym',
-     kwargs={"game_id": "ExplodingKittens", "agent_ids": ["python", "random"]}
+     kwargs={"game_id": "PowerGrid", "agent_ids": ["python", "random", "random"]}
 )
 
 gym.envs.register(

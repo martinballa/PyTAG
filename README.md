@@ -23,58 +23,77 @@ pytag you may follow the steps below.
 
 - 1, Clone this repository.
 - 2, Install PyTAG as a python package ```pip install -e .```
-- 3, Run ```jar_setup.py``` to download the latest jar file for TAG or see the section on "Getting the TAG jar files"
-  below for more options. 
+- 3, Run ```python jar_setup.py``` to download the latest `TAG.jar` or see "Getting the TAG jar file" below for manual options.
 - 4, (optional) install pytag with the additional dependencies to run the baselines ```pip install -e .[examples]```
 - 5, (optional) you may test your installation by running the examples in ```examples/``` for instance
   ```pt-action-masking.py```.
 
-### Getting the TAG jar files
+### Getting the TAG jar file
+PyTAG requires a single `TAG.jar` file placed in the `pytag/jars/` folder. Running `jar_setup.py` will download it automatically:
+```bash
+python jar_setup.py
+```
+Or download `TAG.jar` manually from [Google Drive](https://drive.google.com/file/d/1wIM2xPE5tqvVzO931t3xcVYWk7VCr6i8/view?usp=drive_link) and place it in `pytag/jars/`.
 
-Pytag is looking for the TAG jar file in the ```pytag/jars/``` folder. To get the latest jar file you may run
-```jar_setup.py``` which will download the latest jar files and unpack them at the correct location.
-Or alternatively you may manually download it
-from [Google drive](https://drive.google.com/file/d/1wIM2xPE5tqvVzO931t3xcVYWk7VCr6i8/view?usp=drive_link)  and place
-the jar files in the ```pytag/jars/``` folder.
+To build `TAG.jar` from source, see the [TAG wiki](https://tabletopgames.ai/wiki/maven): run `mvn install` in the TAG repository and copy `target/TAG.jar` to `pytag/jars/`.
 
-In case that you want to make changes to the JAVA framework (i.e.: implementing the RL interfaces for a new game) you
-need to create new jar files from TAG and place them in the ```pytag/jars/``` folder. 
-For instructions on building the full TAG.jar file, see the [TAG website](https://tabletopgames.ai/wiki/maven); 
-although this just requires a `mvn install` command, then copy the generated `target/TAG.jar` file to the `pytag/jars/` folder.
+## Supported games
+
+The following games are currently supported (as registered Gymnasium environments):
+
+| Game | Gym ID | Obs type | Players |
+|------|--------|----------|---------|
+| Diamant | `TAG/Diamant-v0` | vector | 2+ |
+| TicTacToe | `TAG/TicTacToe-v0` | vector | 2 |
+| LoveLetter | `TAG/LoveLetter-v0` | vector | 2+ |
+| Stratego | `TAG/Stratego-v0` | vector | 2 |
+| SushiGo | `TAG/SushiGo-v0` | JSON | 2–5 |
+| SushiGo (multi-agent) | `TAG/SushiGo-MA-v0` | JSON | 2 |
+| PowerGrid | `TAG/PowerGrid-v0` | vector | 3–6 |
 
 ## Getting started
 
-The examples folder provides a few python scripts that may serve as a starting point for using the framework.
-```pt-action-masking.py``` demonstrates how the action masking may be used to sample random valid actions manually.
-```gym-action-masking.py``` extends this to using the action masking in a gym environment. ```gym-random.py``` shows how
-the built-in action sampler may be used.
-```ma-random.py``` demonstrates how multiple python agents may be controlled.
-The remaining scripts are used to run the PPO baselines from the IEEE CoG 23' paper. ```ppo-eval.py``` allows you to
-load a trained PPO model for evaluation.
+The `examples/` folder provides scripts to get started with the framework.
+`pt-action-masking.py` demonstrates manual action masking; `gym-action-masking.py` extends this to a Gymnasium environment; `gym-random.py` uses the built-in action sampler; `ma-random.py` shows how to control multiple Python agents simultaneously.
+
+The PPO baseline scripts (`ppo.py`, `ppo-lstm.py`, `ppo-selfplay.py`) reproduce the experiments from the papers listed below. `ppo-eval.py` loads a trained model for evaluation. The self-play script (`ppo-selfplay.py`) trains agents via self-play using `TAGSelfPlayGYm` and a checkpoint pool for opponent selection.
 
 ## Citing Information
 
-To cite PyTAG in your work, please cite this paper:
+If you use PyTAG in your work, please cite the relevant papers below.
 
-```
-@article{balla2023pytag,
-  title={PyTAG: Challenges and Opportunities for Reinforcement Learning in Tabletop Games},
-  author={Balla, Martin and Long, George EM and Jeurissen, Dominik and Goodman, James and Gaina, Raluca D and Perez-Liebana, Diego},
-  year= {2023},
-  booktitle= {{IEEE Conference on Games (CoG), 2023}},
+The IEEE Transactions on Games journal paper covers the full framework including multiagent and self-play environments:
+```bibtex
+@article{balla2024pytag,
+  author    = {Balla, Martin and Long, George E. M. and Goodman, James and Gaina, Raluca D. and Perez-Liebana, Diego},
+  journal   = {IEEE Transactions on Games},
+  title     = {{PyTAG}: Tabletop Games for Multiagent Reinforcement Learning},
+  year      = {2024},
+  volume    = {16},
+  number    = {4},
+  pages     = {993--1002},
+  doi       = {10.1109/TG.2024.3404133}
 }
 ```
 
-To cite TAG in your work, please cite this paper:
-
+The original CoG 2023 paper introduced the single-agent interface:
+```bibtex
+@inproceedings{balla2023pytag,
+  author    = {Balla, Martin and Long, George E. M. and Jeurissen, Dominik and Goodman, James and Gaina, Raluca D. and Perez-Liebana, Diego},
+  title     = {{PyTAG}: Challenges and Opportunities for Reinforcement Learning in Tabletop Games},
+  booktitle = {IEEE Conference on Games (CoG)},
+  year      = {2023}
+}
 ```
+
+To cite the TAG framework itself:
+```bibtex
 @inproceedings{gaina2020tag,
-         author= {Raluca D. Gaina and Martin Balla and Alexander Dockhorn and Raul Montoliu and Diego Perez-Liebana},
-         title= {{TAG: A Tabletop Games Framework}},
-         year= {2020},
-         booktitle= {{Experimental AI in Games (EXAG), AIIDE 2020 Workshop}},
-         abstract= {Tabletop games come in a variety of forms, including board games, card games, and dice games. In recent years, their complexity has considerably increased, with many components, rules that change dynamically through the game, diverse player roles, and a series of control parameters that influence a game's balance. As such, they also encompass novel and intricate challenges for Artificial Intelligence methods, yet research largely focuses on classical board games such as chess and Go. We introduce in this work the Tabletop Games (TAG) framework, which promotes research into general AI in modern tabletop games, facilitating the implementation of new games and AI players, while providing analytics to capture the complexities of the challenges proposed. We include preliminary results with sample AI players, showing some moderate success, with plenty of room for improvement, and discuss further developments and new research directions.},
-    }
+  author    = {Raluca D. Gaina and Martin Balla and Alexander Dockhorn and Raul Montoliu and Diego Perez-Liebana},
+  title     = {{TAG}: A Tabletop Games Framework},
+  booktitle = {Experimental AI in Games (EXAG), AIIDE 2020 Workshop},
+  year      = {2020}
+}
 ```
 
 ## Contact and contribute

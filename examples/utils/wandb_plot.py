@@ -9,7 +9,7 @@ sns.set_theme()
 from collections import defaultdict, OrderedDict
 
 agent = ["PPO", "PPO_LSTM"]
-games = [ "TAG/Stratego", "TAG/TicTacToe", "TAG/Diamant", "TAG/ExplodingKittens", "TAG/LoveLetter"] # "TAG/TicTacToe", "TAG/Stratego",
+games = ["TAG/Stratego", "TAG/TicTacToe", "TAG/Diamant", "TAG/LoveLetter", "TAG/PowerGrid"]
 opponents = ["random", "osla"]
 n_players = [2]
 metric = "length"  # wins, rewards, length
