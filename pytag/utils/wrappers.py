@@ -40,12 +40,13 @@ class StrategoWrapper(gym.ObservationWrapper):
 
 class SushiGoWrapper(gym.ObservationWrapper):
     # Sushi GO wrapper - an example that extracts the observation from JSON
-    def __init__(self, env):
+    def __init__(self, env, n_players=2):
         super().__init__(env)
         self.card_types = ["Maki", "Maki-2", "Maki-3", "Chopsticks", "Tempura", "Sashimi", "Dumpling", "SquidNigiri",
                       "SalmonNigiri", "EggNigiri", "Wasabi", "Pudding"]
-
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=[147], dtype=np.float32)
+        self.n_players = n_players
+        self._obs_shapes = [-1, 147, 160, 173]
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=[self._obs_shapes[n_players-1]], dtype=np.float32)
         self.max_cards_in_hand = 10
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
@@ -89,7 +90,7 @@ class SushiGoWrapper(gym.ObservationWrapper):
         round = np.expand_dims(round, 0)
         played_cards = np.sum(played_cards_, axis=0)
         cards_in_hand = np.stack(cards_in_hand_, 0).flatten()
-        opp_played_cards = np.sum(opponent_played_cards_, axis=1).flatten()
+        opp_played_cards = np.concatenate([np.sum(opc, axis=0) for opc in opponent_played_cards_])
         obs = np.concatenate([score, round, played_cards, cards_in_hand, opp_played_cards, opp_scores])
         return obs
 
@@ -156,15 +157,19 @@ class RecordEpisodeStatistics(gym.Wrapper):
                     "Attempted to add episode stats when they already exist"
                 )
             else:
+                outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
                 infos["episode"] = {
                     "r": np.where(dones, self.episode_returns, 0.0),
                     "l": np.where(dones, self.episode_lengths, 0),
-                    "w": [0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]],
+                    "w": outcomes,
                     "t": np.where(
                         dones,
                         np.round(time.perf_counter() - self.episode_start_times, 6),
                         0.0,
                     ),
+                    "wins": np.where(outcomes == 1.0, 1.0, 0.0),
+                    "losses": np.where(outcomes == -1.0, 1.0, 0.0),
+                    "ties": np.where(outcomes == 0, 1.0, 0.0),
                 }
                 if self.is_vector_env:
                     infos["_episode"] = np.where(dones, True, False)
@@ -173,6 +178,101 @@ class RecordEpisodeStatistics(gym.Wrapper):
             self.episode_count += num_dones
             self.episode_lengths[dones] = 0
             self.episode_returns[dones] = 0
+            self.episode_start_times[dones] = time.perf_counter()
+        return (
+            observations,
+            rewards,
+            terminations,
+            truncations,
+            infos,
+        )
+
+# Adapted wrapper for the self-play case
+class RecordSelfPlayEpStats(gym.Wrapper):
+    # Based on RecordEpisodeStatistics from gymnasium, but it checks whether the player has won the game
+    """This wrapper will keep track of cumulative rewards and episode lengths.
+
+    At the end of an episode, the statistics of the episode will be added to ``info``
+    using the key ``episode``. If using a vectorized environment also the key
+    ``_episode`` is used which indicates whether the env at the respective index has
+    the episode statistics.
+    """
+
+    def __init__(self, env: gym.Env):
+        """This wrapper will keep track of cumulative rewards and episode lengths.
+
+        Args:
+            env (Env): The environment to apply the wrapper
+            deque_size: The size of the buffers :attr:`return_queue` and :attr:`length_queue`
+        """
+        super().__init__(env)
+        self.num_envs = getattr(env, "num_envs", 1)
+        self.episode_count = 0
+        self.episode_start_times: np.ndarray = None
+        self.episode_returns: Optional[np.ndarray] = None
+        self.episode_lengths: Optional[np.ndarray] = None
+        self.episode_wins: Optional[np.ndarray] = None
+        self.total_lenghts: Optional[np.ndarray] = None
+        self.is_vector_env = getattr(env, "is_vector_env", False)
+
+    def reset(self, **kwargs):
+        """Resets the environment using kwargs and resets the episode returns and lengths."""
+        obs, info = super().reset(**kwargs)
+        self.episode_start_times = np.full(
+            self.num_envs, time.perf_counter(), dtype=np.float32
+        )
+        self.episode_returns = np.zeros(self.num_envs, dtype=np.float32)
+        self.episode_lengths = np.zeros(self.num_envs, dtype=np.int32)
+        self.episode_wins = np.zeros(self.num_envs, dtype=np.int32)
+        self.total_lenghts = np.zeros(self.num_envs, dtype=np.int32)
+        return obs, info
+
+    def step(self, action):
+        """Steps through the environment, recording the episode statistics."""
+        (
+            observations,
+            rewards,
+            terminations,
+            truncations,
+            infos,
+        ) = self.env.step(action)
+        assert isinstance(
+            infos, dict
+        ), f"`info` dtype is {type(infos)} while supported dtype is `dict`. This may be due to usage of other wrappers in the wrong order."
+        update_idx = infos["player_id"] == infos["learning_player"]
+        self.episode_returns += rewards * update_idx
+        self.episode_lengths += update_idx
+        self.total_lenghts += 1
+        self.episode_wins += infos["has_won"] * update_idx
+        dones = np.logical_or(terminations, truncations)
+        num_dones = np.sum(dones)
+        if num_dones:
+            if "episode" in infos or "_episode" in infos:
+                raise ValueError(
+                    "Attempted to add episode stats when they already exist"
+                )
+            else:
+                outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
+                infos["episode"] = {
+                    "r": np.where(dones, self.episode_returns, 0.0),
+                    "l": np.where(dones, self.episode_lengths, 0),
+                    "total_l": np.where(dones, self.total_lenghts, 0),
+                    "w": outcomes,
+                    "t": np.where(
+                        dones,
+                        np.round(time.perf_counter() - self.episode_start_times, 6),
+                        0.0,
+                    ),
+                    "wins": np.where(outcomes == 1.0, 1.0, 0.0),
+                    "losses": np.where(outcomes == -1.0, 1.0, 0.0),
+                    "ties": np.where(outcomes == 0, 1.0, 0.0),
+                }
+                if self.is_vector_env:
+                    infos["_episode"] = np.where(dones, True, False)
+            self.episode_count += num_dones
+            self.episode_lengths[dones] = 0
+            self.episode_returns[dones] = 0
+            self.total_lenghts[dones] = 0
             self.episode_start_times[dones] = time.perf_counter()
         return (
             observations,

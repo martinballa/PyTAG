@@ -14,36 +14,143 @@ import torch.optim as optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-from pytag import gym_wrapper
-from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
-from pytag.utils.common import make_env
+from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics, RecordSelfPlayEpStats
+from pytag.utils.common import make_env, make_sp_env
 from examples.utils.networks import PPONet
 
 class SelfPlayAssistant():
     '''
     Self-play assistant for PPO - handles checkpointing and opponent selection
+
     '''
 
-    def __init__(self):
-        self.checkpoint_freq = int(5e5) # every 500k steps
-        self.window = 10 # number of previous checkpoints to store
-        self.replace_freq = int(5e4) # every 50k steps
-        self.self_play_prob = 0.5 # probability to play against self
+    def __init__(self, checkpoint_freq=int(5e3), window=10, replace_freq=int(1e3), self_play_prob=0.7, save_checkpoints=False, checkpoint_dir="~/data/PPO-SP/checkpoints/", seed=None):
+        self.checkpoint_freq = checkpoint_freq # how often we want to save a checkpoint
+        self.window = window # number of previous checkpoints to store
+        self.replace_freq = replace_freq # how often we want to replace the opponent
+        self.self_play_prob = self_play_prob # probability to play against self
         self.checkpoints = deque(maxlen=self.window)
+        self.save_steps = deque(maxlen=self.window)
+        self.save_checkpoints = save_checkpoints
+        self.checkpoint_dir = checkpoint_dir
+        if not seed:
+            seed = random.randint(0, 100000)
+        self.seed = seed
+        self.rnd = random.Random(seed)
 
-    def replace(self, agents):
-        # return chosen checkpoints as opponents
-        return agents
+        # create directory structure for saving checkpoints
+        if self.save_checkpoints:
+            if not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir)
 
-    def add_checkpoint(self, agent):
-        # todo save and remove old checkpoint
-        self.checkpoints.append(agent)
+    def update_pool(self, agent, steps):
+        # return sampled checkpoints as opponents
+        if self.save_checkpoints:
+            # save new checkpoint
+            checkpoint_name = os.path.join(self.checkpoint_dir, f"checkpoint_{steps}.pt")
+            torch.save(agent, checkpoint_name)
+            self.checkpoints.append(checkpoint_name)
+        else:
+            # keep it in memory
+            self.checkpoints.append(agent)
+        self.save_steps.append(steps)
+
+    def sample_opponent(self):
+        if self.rnd.random() < self.self_play_prob:
+            # choose the last ID
+            checkpoint_id = len(self.checkpoints) -1
+        else:
+            checkpoint_id = self.rnd.randint(0, len(self.checkpoints)-1)
+        print(f"sampled opponent {checkpoint_id} from timestep {self.save_steps[checkpoint_id]}")
+        if self.save_checkpoints:
+            agent = torch.load(self.checkpoints.get(checkpoint_id))
+        else:
+            agent = self.checkpoints[checkpoint_id]
+        return agent
+
+    def add_checkpoint(self, args, agent, step):
+        # copies agent and add it to the pool
+        # in case of step coming as a torch tensor we need to detach it
+        if isinstance(step, torch.Tensor):
+            step = step.item()
+        if self.save_checkpoints:
+            self.update_pool(agent, step)
+        else:
+            agent_copy = PPONet(args, envs).to(device)
+            agent_copy.load_state_dict(agent.state_dict())
+            self.update_pool(agent_copy, step)
+
+def split_obs(obs, mask, filter):
+    """Function used to split the observation into the player's own observation and the opponent's observation."""
+    # Only used for acting - during optimisation we only work from our agent's point of view
+    obs_, opp_obs = [], []
+    mask_, opp_mask = [], []
+    for i in range(len(filter)):
+        if filter[i]:
+            obs_.append(obs[i])
+            mask_.append(mask[i])
+        else:
+            opp_obs.append(obs[i])
+            opp_mask.append(mask[i])
+    if len(obs_) > 0:
+        obs_ = torch.stack(obs_)
+        mask_ = torch.stack(mask_)
+    if len(opp_obs) > 0:
+        opp_obs = torch.stack(opp_obs)
+        opp_mask = torch.stack(opp_mask)
+    # obs_filter = filter.unsqueeze(-1).repeat(1, obs.shape[1:])
+    # mask_filter = filter.unsqueeze(-1).repeat(1, mask.shape[1:])
+    #
+    # obs_, opp_obs = obs[obs_filter].reshape(-1, obs.shape[1:]), obs[~obs_filter].reshape(-1, obs.shape[1:])
+    # mask_, opp_mask = mask[mask_filter].reshape(-1, mask.shape[1:]), mask[~mask_filter].reshape(-1, mask.shape[1:])
+
+    # obs_filter = filter.unsqueeze(-1).repeat(1, obs.shape[-1])
+    # mask_filter = filter.unsqueeze(-1).repeat(1, mask.shape[-1])
+    #
+    # obs_, opp_obs = obs[obs_filter].reshape(-1, obs.shape[-1]), obs[~obs_filter].reshape(-1, obs.shape[-1])
+    # mask_, opp_mask = mask[mask_filter].reshape(-1, mask.shape[-1]), mask[~mask_filter].reshape(-1, mask.shape[-1])
+    return (obs_, opp_obs), (mask_, opp_mask)
+
+def merge_actions(train_ids, actions, opp_actions):
+    """Function to merge back together the actions"""
+    i = j = 0
+    results = torch.zeros(actions.shape[0] + opp_actions.shape[0], dtype=actions.dtype)
+    for id in train_ids:
+        if id:
+            results[i+j] = actions[i]
+            i += 1
+        else:
+            results[i+j] = opp_actions[j]
+            j += 1
+    return results
+
+
+def insert_at_indices(buffer, global_step, indices, values, sparse=True):
+    # sparse means that len(values) <= len(indices) - in this case we need different indexing
+    # modifies buffer directly - inserts values into tensor at indices
+    # used to populate the tensors during training with each env's corresponding transitions
+    # buffer is [Batch, num-envs, ...]; note that len(indices) >= len(values)
+    if len(values) > 0:
+        j = 0
+        for i in range(len(indices)):
+            if indices[i]:
+                buffer[global_step[i], i] = values[j]
+                if sparse: # only update at indices
+                    j += 1
+            # always update
+            if not sparse:
+                j += 1
+
 
 def evaluate(args, agent, global_step, opponents=["random"]):
     for opponent in opponents:
         # todo maybe instead of making a new env, we could just store the eval envs
+        obs_type = "vector"
+        if "Sushi" in args.env_id:
+            obs_type = "json"
+        # could add:  randomise_order=True,
         envs = gym.vector.SyncVectorEnv(
-            [make_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack) for i in
+            [make_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
              range(args.num_envs)]
         )
         # For environments in which the action-masks align (aka same amount of actions)
@@ -54,7 +161,8 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         # stats
         episodes = 0
         total_steps = 0
-        rewards, lengths, wins = [], [], []
+        rewards, lengths, outcomes = [], [], []
+        wins, ties, losses = [], [], []
 
         start_time = time.time()
         next_obs, next_info = envs.reset()
@@ -67,6 +175,7 @@ def evaluate(args, agent, global_step, opponents=["random"]):
             total_steps += 1 * args.num_envs
 
             with torch.no_grad():
+                # all actions are for our agent
                 action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
 
             next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
@@ -83,17 +192,22 @@ def evaluate(args, agent, global_step, opponents=["random"]):
                     if info["_episode"][i]:
                         rewards.append(info["episode"]["r"][i])
                         lengths.append(info["episode"]["l"][i])
-                        wins.append(info["episode"]["w"][i])
+                        outcomes.append(info["episode"]["w"][i])
+                        wins.append(info["episode"]["wins"][i])
+                        ties.append(info["episode"]["ties"][i])
+                        losses.append(info["episode"]["losses"][i])
 
                         episodes += 1
+        writer.add_scalar(f"eval/{opponent}/episodic_wins", np.mean(wins), global_step)
+        writer.add_scalar(f"eval/{opponent}/episodic_ties", np.mean(ties), global_step)
+        writer.add_scalar(f"eval/{opponent}/episodic_losses", np.mean(losses), global_step)
 
         writer.add_scalar(f"eval/{opponent}/mean_return", np.mean(rewards), global_step)
         writer.add_scalar(f"eval/{opponent}/mean_length", np.mean(lengths), global_step)
-        writer.add_scalar(f"eval/{opponent}/win_rate", np.mean(wins), global_step)
+        writer.add_scalar(f"eval/{opponent}/outcome", np.mean(outcomes), global_step)
         writer.add_scalar(f"eval/{opponent}/std_return", np.std(rewards), global_step)
         writer.add_scalar(f"eval/{opponent}/std_length", np.std(lengths), global_step)
         writer.add_scalar(f"eval/{opponent}/SPS", int(total_steps / (time.time() - start_time)), global_step)
-
 
 def parse_args():
     # fmt: off
@@ -124,11 +238,10 @@ def parse_args():
     parser.add_argument("--eval-episodes", type=int, default=5,
         help="Evaluation episodes per setup")
 
-
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="TAG/Diamant-v0",
         help="the id of the environment")
-    parser.add_argument("--total-timesteps", type=int, default=500000,
+    parser.add_argument("--total-timesteps", type=int, default=1000000,
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=2.5e-4,
         help="the learning rate of the optimizer")
@@ -138,7 +251,7 @@ def parse_args():
         help="the number of steps to run in each environment per policy rollout")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Toggle learning rate annealing for policy and value networks")
-    parser.add_argument("--gamma", type=float, default=0.99,
+    parser.add_argument("--gamma", type=float, default=0.9,
         help="the discount factor gamma")
     parser.add_argument("--gae-lambda", type=float, default=0.95,
         help="the lambda for the general advantage estimation")
@@ -165,8 +278,16 @@ def parse_args():
     parser.add_argument("--n-players", type=int, default=2,
         help="the number of players in the env (note some games only support certain number of players)")
     parser.add_argument("--framestack", type=int, default=1)
+
+    # self-play args
+    parser.add_argument("--sp-checkpoint-freq", type=int, default=int(5e4))
+    parser.add_argument("--sp-window", type=int, default=10, help="Number of checkpoints to store in memory")
+    parser.add_argument("--sp-replace-freq", type=int, default=int(1e4), help="How often to replace the opponent")
+    parser.add_argument("--sp-recent-prob", type=float, default=0.7, help="Probability of playing against most recent checkpoint")
+    parser.add_argument("--sp-save-checkpoints", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True, help="Whether to save checkpoints to disk instead of keeping them in memory")
+
     args = parser.parse_args()
-    args.batch_size = int(args.num_envs * args.num_steps)
+    args.batch_size = int(args.num_envs * args.num_steps) # max batch-size
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     # fmt: on
     return args
@@ -210,21 +331,26 @@ if __name__ == "__main__":
         device = torch.device('cpu')
 
     # env setup
+    obs_type = "vector"
+    if "Sushi" in args.env_id:
+        obs_type = "json"
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, args.seed + i, args.opponent, args.n_players, framestack=args.framestack) for i in range(args.num_envs)]
+        [make_sp_env(args.env_id, args.seed + i, args.n_players, framestack=args.framestack, randomise_order=True, obs_type=obs_type) for i in range(args.num_envs)]
     )
-    # envs = SyncVectorEnv([
-    #     lambda: StrategoWrapper(gym.make(args.env_id))
-    #     for i in range(args.num_envs)
-    # ])
     # For environments in which the action-masks align (aka same amount of actions)
     # This wrapper will merge them all into one numpy array, instead of having an array of arrays
     envs = MergeActionMaskWrapper(envs)
-    envs = RecordEpisodeStatistics(envs)
+    envs = RecordSelfPlayEpStats(envs)
 
-    # agent = Agent(args, envs).to(device)
     agent = PPONet(args, envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    training_manager = SelfPlayAssistant(window=args.sp_window, checkpoint_freq=args.sp_checkpoint_freq,
+                                         replace_freq=args.sp_replace_freq, self_play_prob=args.sp_recent_prob,
+                                         save_checkpoints=args.sp_save_checkpoints, seed=args.seed)
+    # add and "sample" the first checkpoint
+    training_manager.add_checkpoint(args, agent, 0)
+    opponent = training_manager.sample_opponent()
 
     # ALGO Logic: Storage setup
     if args.framestack > 1:
@@ -246,82 +372,153 @@ if __name__ == "__main__":
     if args.framestack > 1:
         next_obs = next_obs.view(next_obs.shape[0], -1)
     next_masks = torch.from_numpy(next_info["action_mask"]).to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
-    num_updates = args.total_timesteps // args.batch_size
+    learning_id = torch.from_numpy(next_info["learning_player"]).to(device)
+    player_id = torch.from_numpy(next_info["player_id"]).to(device)
+    train_ids = (learning_id == player_id).int()
 
-    # making sure that we can update it correctly
-    eval_freq = (args.eval_freq + (args.eval_freq % args.num_envs)) // num_updates
+    step = 0
+    steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
+    while global_step < args.total_timesteps:
 
-    for update in range(1, num_updates + 1):
-        # Annealing the rate if instructed to do so.
         if args.anneal_lr:
-            frac = 1.0 - (update - 1.0) / num_updates
+            # Annealing the rate if instructed to do so.
+            frac = 1.0 - (global_step - 1.0) / args.total_timesteps
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
-        for step in range(0, args.num_steps):
-            global_step += 1 * args.num_envs
-            obs[step] = next_obs
-            dones[step] = next_done
+        while step < args.num_steps:
+            # note that step is max(steps) so if any of the envs reach step we stop! - we don't wait to fill up all the transitions
+            # step is not a scalar value - but rather trajectory length for each training agent
+            # approach: split and merge observations depending on who needs to act
+            # update step and the trajectories where training_id is not zero
 
             # ALGO LOGIC: action logic
+            action = opp_action = torch.zeros(0) # just a placeholder
+            logprob = opp_logprob = torch.zeros(0)
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_masks)
-                values[step] = value.flatten()
-            actions[step] = action
-            masks[step] = next_masks
-            logprobs[step] = logprob
+                # global step only counts where our training agent is acting
+                global_step += sum(train_ids).item()
+                (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
+                if len(next_obs) > 0:
+                    # self-play agent acting
+                    action, logprob, _, value = agent.get_action_and_value(next_obs, mask=next_mask)
+                if len(opp_obs) > 0:
+                    opp_action, opp_logprob, _, opp_value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
-            # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, done, truncated, info = envs.step(action.cpu().numpy())
+                # self-play admin
+                if global_step % training_manager.checkpoint_freq < sum(train_ids):
+                    training_manager.add_checkpoint(args, agent, global_step)
+                if global_step % training_manager.replace_freq < sum(train_ids):
+                    opponent = training_manager.sample_opponent()
+
+                # modified
+                if len(next_obs) > 0:
+                    # merge back actions and logprobs
+                    action_ = merge_actions(train_ids, action, opp_action)
+                    # update buffers
+                    insert_at_indices(obs, steps, train_ids, next_obs)
+                    insert_at_indices(values, steps, train_ids, value.flatten())
+                    insert_at_indices(actions, steps, train_ids, action)
+                    insert_at_indices(logprobs, steps, train_ids, logprob)
+                    insert_at_indices(masks, steps, train_ids, next_mask)
+                else:
+                    action_ = opp_action
+
+            # merge the actions back together
+            next_obs, reward, done, truncated, info = envs.step(action_.cpu().numpy())
+
             next_masks = torch.from_numpy(info["action_mask"]).to(device)
-            rewards[step] = torch.tensor(reward).to(device).view(-1)
-            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
+            reward = torch.tensor(reward).to(device)
+            done = torch.Tensor(done).to(device)
+
+            # due to the vec env the player ids are resampled at the next episode - so we need the previous player id
+            # when we win - we get reward instantly
+            insert_at_indices(rewards, steps, train_ids, reward, sparse=False)
+            insert_at_indices(dones, steps, train_ids, done, sparse=False)
+
+            # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
+            # note that only the learning player gets reward from the SP env
+            insert_at_indices(rewards, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), reward, sparse=False)
+            insert_at_indices(dones, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), done, sparse=False)
+            # insert_at_indices(rewards, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), reward, sparse=False)
+            # insert_at_indices(dones, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), done, sparse=False)
+
+            next_obs = torch.Tensor(next_obs).to(device)
             if args.framestack > 1:
                 next_obs = next_obs.view(next_obs.shape[0], -1)
 
-            if "episode" in info: # todo not sure if it's faster than just iterationg over _episode
+            # keep track of the steps
+            steps += train_ids
+            step = steps.max()
+
+            learning_id = torch.from_numpy(info["learning_player"]).to(device)
+            player_id = torch.from_numpy(info["player_id"]).to(device)
+            train_ids = (learning_id == player_id).int()
+
+            if "episode" in info:
                 for i in range(args.num_envs):
                     if info["_episode"][i]:
-                        # print(f"global_step={global_step}, episodic_return={info['episode']['r'][i]}")
+                        writer.add_scalar("charts/episodic_wins", info["episode"]["wins"][i], global_step)
+                        writer.add_scalar("charts/episodic_ties", info["episode"]["ties"][i], global_step)
+                        writer.add_scalar("charts/episodic_losses", info["episode"]["losses"][i], global_step)
+
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"][i], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"][i], global_step)
-                        writer.add_scalar("charts/episodic_wins", info["episode"]["w"][i], global_step)
+                        writer.add_scalar("charts/total_ep_length", info["episode"]["total_l"][i], global_step)
+                        writer.add_scalar("charts/episodic_outcomes", info["episode"]["w"][i], global_step) # [-1, 1]
+
+            # if we have just passed this point then we evaluate
+            with torch.no_grad():
+                if global_step % args.eval_freq <= sum(train_ids).item():
+                    evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
 
         # bootstrap value if not done
+        # update starts here: we want to take the final observation where the training agent was used for acting
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            for t in reversed(range(args.num_steps)):
-                if t == args.num_steps - 1:
-                    nextnonterminal = 1.0 - next_done
-                    nextvalues = next_value
-                else:
-                    nextnonterminal = 1.0 - dones[t + 1]
-                    nextvalues = values[t + 1]
+            # last step is not observed (128) and for bootstrapping we need 127
+            # the last step is used with t+1, so we are not losing anything
+            for t in reversed(range(args.num_steps - 2)):
+                # with (steps > t).int() we filter out the incorrect values
+                nextnonterminal = 1.0 - dones[t + 1]
+                nextvalues = values[t + 1] * (steps > t).int()
                 delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + values
 
-        # flatten the batch
-        if args.framestack > 1:
-            b_obs = obs.reshape((-1,) + ((np.array(envs.single_observation_space.shape)).prod(),))
-        else:
-            b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        b_masks = masks.reshape((-1,) + (envs.single_action_space.n, ))
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = values.reshape(-1)
+        # todo add back support for framestacking
+        # if args.framestack > 1:
+        #     obs = torch.zeros(
+        #         (args.num_steps, args.num_envs) + (np.array(envs.single_observation_space.shape).prod(),)).to(device)
+        # else:
+        n_transitions = torch.sum(steps)
+        b_obs = torch.zeros((n_transitions,) + envs.single_observation_space.shape).to(device)
+        b_logprobs = torch.zeros((n_transitions)).to(device)
+        b_actions = torch.zeros((n_transitions,) + envs.single_action_space.shape).to(device)
+        b_masks = torch.zeros((n_transitions, envs.single_action_space.n), dtype=torch.bool).to(device)
+        b_advantages = torch.zeros((n_transitions)).to(device)
+        b_returns = torch.zeros((n_transitions)).to(device)
+        b_values = torch.zeros((n_transitions)).to(device)
+
+        # flatten the batch and cut-off the trajectories
+        j = 0
+        for i in range(args.num_envs):
+            b_obs[j:j+steps[i]] = obs[:steps[i], i]
+            b_logprobs[j:j+steps[i]] = logprobs[:steps[i], i]
+            b_actions[j:j+steps[i]] = actions[:steps[i], i]
+            b_masks[j:j+steps[i]] = masks[:steps[i], i]
+            b_advantages[j:j+steps[i]] = advantages[:steps[i], i]
+            b_returns[j:j+steps[i]] = returns[:steps[i], i]
+            b_values[j:j+steps[i]] = values[:steps[i], i]
+            j += steps[i]
 
         # Optimizing the policy and value network
-        b_inds = np.arange(args.batch_size)
+        b_inds = np.arange(n_transitions)
         clipfracs = []
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
-            for start in range(0, args.batch_size, args.minibatch_size):
+            for start in range(0, n_transitions, args.minibatch_size):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
@@ -388,10 +585,11 @@ if __name__ == "__main__":
         # print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-        # evaluation
-        if global_step % eval_freq == 0:
-            evaluate(args, agent, global_step, opponents=["random", "osla"])
 
+
+        # reset counters
+        step = 0
+        steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")
