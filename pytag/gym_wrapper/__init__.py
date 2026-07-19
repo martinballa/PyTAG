@@ -20,9 +20,9 @@ gym.envs.register(
 )
 
 gym.envs.register(
-     id='TAG/ExplodingKittens-v0',
+     id='TAG/PowerGrid-v0',
      entry_point='pytag.gym_wrapper.envs:TagSingleplayerGym',
-     kwargs={"game_id": "ExplodingKittens", "agent_ids": ["python", "random"]}
+     kwargs={"game_id": "PowerGrid", "agent_ids": ["python", "random", "random"]}
 )
 
 gym.envs.register(

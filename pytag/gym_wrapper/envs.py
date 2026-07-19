@@ -100,16 +100,16 @@ class TAGMultiplayerGym(gym.Env):
         self.observation_space = gym.spaces.Box(shape=(obs_size,), low=float("-inf"), high=float("inf"))
         self._action_tree_shape = self._java_env.get_action_tree_shape()
 
-    def reset(self):
-        # return {"player1": obs1, "player2": obs2}
+    def reset(self, *, seed: int | None = None, options: dict | None = None):
+        if seed is not None:
+            self._java_env._rnd = random.Random(seed)
         obs, info = self._java_env.reset()
         return obs, info
 
         
     def step(self, actions: Dict[str, int]):
-        # return {"player1": obs1, "player2": obs2}
-        obs, reward, done, truncated, info = self._java_env.step(actions)
-        return obs, reward, done, truncated, info
+        obs, reward, done, info = self._java_env.step(actions)
+        return obs, reward, done, False, info
         
     def close(self):
         pass

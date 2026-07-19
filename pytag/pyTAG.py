@@ -7,10 +7,11 @@ import jpype.imports
 import numpy as np
 from typing import List
 def list_supported_games(as_json=False):
-    tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
-    jpype.addClassPath(tag_jar)
+    tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
     if not jpype.isJVMStarted():
-        jpype.startJVM(convertStrings=False)
+        jpype.startJVM(classpath=[tag_jar], convertStrings=False)
+    else:
+        jpype.addClassPath(tag_jar)
     PyTAGEnv = jpype.JClass("core.PyTAG")
     if as_json:
         return json.loads(str(PyTAGEnv.getSupportedGamesJSON()))
@@ -50,10 +51,11 @@ class PyTAG():
         assert game_id in _game_registry, f"Game {game_id} not supported. Supported games are {_game_registry}"
         assert _game_registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
         # start up the JVM
-        tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'ModernBoardGame.jar')
-        jpype.addClassPath(tag_jar)
+        tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
         if not jpype.isJVMStarted():
-            jpype.startJVM(convertStrings=False)
+            jpype.startJVM(classpath=[tag_jar], convertStrings=False)
+        else:
+            jpype.addClassPath(tag_jar)
 
         # access to the java classes
         PyTAGEnv = jpype.JClass("core.PyTAG")
