@@ -1,6 +1,6 @@
 # various helper functions
 import gymnasium as gym
-from gymnasium.wrappers.frame_stack import FrameStack
+from gymnasium.wrappers import FrameStackObservation as FrameStack
 import numpy as np
 import torch
 

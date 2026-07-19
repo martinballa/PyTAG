@@ -8,10 +8,10 @@ import torch
 
 
 import gymnasium as gym
-from gymnasium.vector import VectorEnvWrapper
+from gymnasium.vector import VectorWrapper
 
 
-class MergeActionMaskWrapper(VectorEnvWrapper):
+class MergeActionMaskWrapper(VectorWrapper):
     def reset_wait(self, **kwargs):
         obs, infos = self.env.reset_wait(**kwargs)
         return obs, self._merge_action_masks(infos)
@@ -94,190 +94,95 @@ class SushiGoWrapper(gym.ObservationWrapper):
         obs = np.concatenate([score, round, played_cards, cards_in_hand, opp_played_cards, opp_scores])
         return obs
 
-class RecordEpisodeStatistics(gym.Wrapper):
-    # Based on RecordEpisodeStatistics from gymnasium, but it checks whether the player has won the game
-    """This wrapper will keep track of cumulative rewards and episode lengths.
+class RecordEpisodeStatistics(VectorWrapper):
+    """Track cumulative rewards, lengths, and wins across vectorized environments."""
 
-    At the end of an episode, the statistics of the episode will be added to ``info``
-    using the key ``episode``. If using a vectorized environment also the key
-    ``_episode`` is used which indicates whether the env at the respective index has
-    the episode statistics.
-    """
-
-    def __init__(self, env: gym.Env, deque_size: int = 100):
-        """This wrapper will keep track of cumulative rewards and episode lengths.
-
-        Args:
-            env (Env): The environment to apply the wrapper
-            deque_size: The size of the buffers :attr:`return_queue` and :attr:`length_queue`
-        """
+    def __init__(self, env, deque_size: int = 100):
         super().__init__(env)
-        self.num_envs = getattr(env, "num_envs", 1)
         self.episode_count = 0
         self.episode_start_times: np.ndarray = None
         self.episode_returns: Optional[np.ndarray] = None
         self.episode_lengths: Optional[np.ndarray] = None
-        self.episode_wins: Optional[np.ndarray] = None
         self.return_queue = deque(maxlen=deque_size)
         self.length_queue = deque(maxlen=deque_size)
-        self.win_queue = deque(maxlen=deque_size)
-        self.is_vector_env = getattr(env, "is_vector_env", False)
 
     def reset(self, **kwargs):
-        """Resets the environment using kwargs and resets the episode returns and lengths."""
         obs, info = super().reset(**kwargs)
-        self.episode_start_times = np.full(
-            self.num_envs, time.perf_counter(), dtype=np.float32
-        )
+        self.episode_start_times = np.full(self.num_envs, time.perf_counter(), dtype=np.float32)
         self.episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self.episode_lengths = np.zeros(self.num_envs, dtype=np.int32)
-        self.episode_wins = np.zeros(self.num_envs, dtype=np.int32)
         return obs, info
 
     def step(self, action):
-        """Steps through the environment, recording the episode statistics."""
-        (
-            observations,
-            rewards,
-            terminations,
-            truncations,
-            infos,
-        ) = self.env.step(action)
-        assert isinstance(
-            infos, dict
-        ), f"`info` dtype is {type(infos)} while supported dtype is `dict`. This may be due to usage of other wrappers in the wrong order."
+        observations, rewards, terminations, truncations, infos = self.env.step(action)
         self.episode_returns += rewards
         self.episode_lengths += 1
-        self.episode_wins += infos["has_won"]
         dones = np.logical_or(terminations, truncations)
         num_dones = np.sum(dones)
         if num_dones:
-            if "episode" in infos or "_episode" in infos:
-                raise ValueError(
-                    "Attempted to add episode stats when they already exist"
-                )
-            else:
-                outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
-                infos["episode"] = {
-                    "r": np.where(dones, self.episode_returns, 0.0),
-                    "l": np.where(dones, self.episode_lengths, 0),
-                    "w": outcomes,
-                    "t": np.where(
-                        dones,
-                        np.round(time.perf_counter() - self.episode_start_times, 6),
-                        0.0,
-                    ),
-                    "wins": np.where(outcomes == 1.0, 1.0, 0.0),
-                    "losses": np.where(outcomes == -1.0, 1.0, 0.0),
-                    "ties": np.where(outcomes == 0, 1.0, 0.0),
-                }
-                if self.is_vector_env:
-                    infos["_episode"] = np.where(dones, True, False)
+            outcomes = np.where(dones, infos["has_won"], 0.0)
+            infos["episode"] = {
+                "r": np.where(dones, self.episode_returns, 0.0),
+                "l": np.where(dones, self.episode_lengths, 0),
+                "w": outcomes,
+                "t": np.where(dones, np.round(time.perf_counter() - self.episode_start_times, 6), 0.0),
+                "wins":   np.where(outcomes == 1.0,  1.0, 0.0),
+                "losses": np.where(outcomes == -1.0, 1.0, 0.0),
+                "ties":   np.where(outcomes == 0.0,  1.0, 0.0),
+            }
+            infos["_episode"] = np.where(dones, True, False)
             self.return_queue.extend(self.episode_returns[dones])
             self.length_queue.extend(self.episode_lengths[dones])
             self.episode_count += num_dones
             self.episode_lengths[dones] = 0
             self.episode_returns[dones] = 0
             self.episode_start_times[dones] = time.perf_counter()
-        return (
-            observations,
-            rewards,
-            terminations,
-            truncations,
-            infos,
-        )
+        return observations, rewards, terminations, truncations, infos
 
 # Adapted wrapper for the self-play case
-class RecordSelfPlayEpStats(gym.Wrapper):
-    # Based on RecordEpisodeStatistics from gymnasium, but it checks whether the player has won the game
-    """This wrapper will keep track of cumulative rewards and episode lengths.
+class RecordSelfPlayEpStats(VectorWrapper):
+    """Track cumulative rewards, lengths, and wins for the learning player in self-play."""
 
-    At the end of an episode, the statistics of the episode will be added to ``info``
-    using the key ``episode``. If using a vectorized environment also the key
-    ``_episode`` is used which indicates whether the env at the respective index has
-    the episode statistics.
-    """
-
-    def __init__(self, env: gym.Env):
-        """This wrapper will keep track of cumulative rewards and episode lengths.
-
-        Args:
-            env (Env): The environment to apply the wrapper
-            deque_size: The size of the buffers :attr:`return_queue` and :attr:`length_queue`
-        """
+    def __init__(self, env):
         super().__init__(env)
-        self.num_envs = getattr(env, "num_envs", 1)
         self.episode_count = 0
         self.episode_start_times: np.ndarray = None
         self.episode_returns: Optional[np.ndarray] = None
         self.episode_lengths: Optional[np.ndarray] = None
-        self.episode_wins: Optional[np.ndarray] = None
-        self.total_lenghts: Optional[np.ndarray] = None
-        self.is_vector_env = getattr(env, "is_vector_env", False)
+        self.total_lengths: Optional[np.ndarray] = None
 
     def reset(self, **kwargs):
-        """Resets the environment using kwargs and resets the episode returns and lengths."""
         obs, info = super().reset(**kwargs)
-        self.episode_start_times = np.full(
-            self.num_envs, time.perf_counter(), dtype=np.float32
-        )
+        self.episode_start_times = np.full(self.num_envs, time.perf_counter(), dtype=np.float32)
         self.episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self.episode_lengths = np.zeros(self.num_envs, dtype=np.int32)
-        self.episode_wins = np.zeros(self.num_envs, dtype=np.int32)
-        self.total_lenghts = np.zeros(self.num_envs, dtype=np.int32)
+        self.total_lengths = np.zeros(self.num_envs, dtype=np.int32)
         return obs, info
 
     def step(self, action):
-        """Steps through the environment, recording the episode statistics."""
-        (
-            observations,
-            rewards,
-            terminations,
-            truncations,
-            infos,
-        ) = self.env.step(action)
-        assert isinstance(
-            infos, dict
-        ), f"`info` dtype is {type(infos)} while supported dtype is `dict`. This may be due to usage of other wrappers in the wrong order."
+        observations, rewards, terminations, truncations, infos = self.env.step(action)
         update_idx = infos["player_id"] == infos["learning_player"]
         self.episode_returns += rewards * update_idx
         self.episode_lengths += update_idx
-        self.total_lenghts += 1
-        self.episode_wins += infos["has_won"] * update_idx
+        self.total_lengths += 1
         dones = np.logical_or(terminations, truncations)
         num_dones = np.sum(dones)
         if num_dones:
-            if "episode" in infos or "_episode" in infos:
-                raise ValueError(
-                    "Attempted to add episode stats when they already exist"
-                )
-            else:
-                outcomes = np.array([0 if final_inf is None else final_inf["has_won"] for final_inf in infos["final_info"]])
-                infos["episode"] = {
-                    "r": np.where(dones, self.episode_returns, 0.0),
-                    "l": np.where(dones, self.episode_lengths, 0),
-                    "total_l": np.where(dones, self.total_lenghts, 0),
-                    "w": outcomes,
-                    "t": np.where(
-                        dones,
-                        np.round(time.perf_counter() - self.episode_start_times, 6),
-                        0.0,
-                    ),
-                    "wins": np.where(outcomes == 1.0, 1.0, 0.0),
-                    "losses": np.where(outcomes == -1.0, 1.0, 0.0),
-                    "ties": np.where(outcomes == 0, 1.0, 0.0),
-                }
-                if self.is_vector_env:
-                    infos["_episode"] = np.where(dones, True, False)
+            outcomes = np.where(dones, infos["has_won"], 0.0)
+            infos["episode"] = {
+                "r":       np.where(dones, self.episode_returns, 0.0),
+                "l":       np.where(dones, self.episode_lengths, 0),
+                "total_l": np.where(dones, self.total_lengths, 0),
+                "w":       outcomes,
+                "t":       np.where(dones, np.round(time.perf_counter() - self.episode_start_times, 6), 0.0),
+                "wins":    np.where(outcomes == 1.0,  1.0, 0.0),
+                "losses":  np.where(outcomes == -1.0, 1.0, 0.0),
+                "ties":    np.where(outcomes == 0.0,  1.0, 0.0),
+            }
+            infos["_episode"] = np.where(dones, True, False)
             self.episode_count += num_dones
             self.episode_lengths[dones] = 0
             self.episode_returns[dones] = 0
-            self.total_lenghts[dones] = 0
+            self.total_lengths[dones] = 0
             self.episode_start_times[dones] = time.perf_counter()
-        return (
-            observations,
-            rewards,
-            terminations,
-            truncations,
-            infos,
-        )
+        return observations, rewards, terminations, truncations, infos
