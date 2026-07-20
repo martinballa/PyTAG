@@ -29,11 +29,11 @@ pytag you may follow the steps below.
   ```pt-action-masking.py```.
 
 ### Getting the TAG jar file
-PyTAG requires a single `TAG.jar` file placed in the `pytag/jars/` folder. Running `jar_setup.py` will download it automatically:
+PyTAG requires a single `TAG.jar` file placed in the `pytag/jars/` folder. Running `jar_setup.py` will download it automatically (no extra dependencies required):
 ```bash
 python jar_setup.py
 ```
-Or download `TAG.jar` manually from [Google Drive](https://drive.google.com/file/d/1wIM2xPE5tqvVzO931t3xcVYWk7VCr6i8/view?usp=drive_link) and place it in `pytag/jars/`.
+Or download `TAG.jar` manually from the [PyTAG releases page](https://github.com/martinballa/PyTAG/releases) and place it in `pytag/jars/`.
 
 To build `TAG.jar` from source, see the [TAG wiki](https://tabletopgames.ai/wiki/maven): run `mvn install` in the TAG repository and copy `target/TAG.jar` to `pytag/jars/`.
 

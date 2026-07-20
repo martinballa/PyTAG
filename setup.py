@@ -6,7 +6,7 @@ setup(
     packages=find_packages(),
     package_data={'': ['jars/*.jar']},
     include_package_data=True,
-    install_requires=["gymnasium", "Jpype1", "numpy", "gdown"],
+    install_requires=["gymnasium", "Jpype1", "numpy"],
     extras_require={
         "examples": ["torch", "tensorboard", "wandb"]
     }
