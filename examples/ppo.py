@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 import pytag.gym_wrapper
 from pytag.utils.wrappers import MergeActionMaskWrapper, RecordEpisodeStatistics
 from pytag.utils.common import make_env
-from utils.networks import PPONet
+from examples.utils.networks import PPONet
 
 def parse_args():
     # fmt: off

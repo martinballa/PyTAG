@@ -39,8 +39,14 @@ def get_agent(data):
     player_factory = jpype.JClass("players.PlayerFactory")
     return player_factory.createPlayer(data)
 
-# create the game registry when PyTAG is loaded
-_game_registry = list_supported_games(as_json=True)
+_game_registry = None
+
+def _get_game_registry():
+    global _game_registry
+    if _game_registry is None:
+        _game_registry = list_supported_games(as_json=True)
+    return _game_registry
+
 class PyTAG():
     """Core class to interact with the pyTAG environment. This class is a wrapper around the Java environment.
     This class expects to have a single python agents
@@ -55,8 +61,9 @@ class PyTAG():
         self._rnd = random.Random(seed)
         self._obs_type = obs_type
 
-        assert game_id in _game_registry, f"Game {game_id} not supported. Supported games are {_game_registry}"
-        assert _game_registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
+        registry = _get_game_registry()
+        assert game_id in registry, f"Game {game_id} not supported. Supported games are {list(registry.keys())}"
+        assert registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
         # start up the JVM
         tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
         jpype.addClassPath(tag_jar)

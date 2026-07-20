@@ -10,7 +10,7 @@ import torch
 
 from pytag.utils.wrappers import MergeActionMaskWrapper, StrategoWrapper
 from pytag.utils.common import make_env
-from utils.networks import PPONet
+from examples.utils.networks import PPONet
 
 def parse_args():
     # fmt: off
