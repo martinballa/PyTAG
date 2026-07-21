@@ -1,10 +1,9 @@
-"""Download TAG.jar from a PyTAG GitHub release into pytag/jars/."""
+"""Download TAG.jar from a TAG GitHub release into pytag/jars/."""
 import argparse
 import os
 import urllib.request
 
-REPO = "martinballa/PyTAG"
-DEFAULT_TAG = "v0.2"
+REPO = "GAIGResearch/TabletopGames"
 DEST = "pytag/jars/TAG.jar"
 
 
@@ -15,7 +14,8 @@ def _progress(count, block_size, total):
 
 
 def download(tag: str, dest: str):
-    url = f"https://github.com/{REPO}/releases/download/{tag}/TAG.jar"
+    path = "latest/download" if tag == "latest" else f"download/{tag}"
+    url = f"https://github.com/{REPO}/releases/{path}/TAG.jar"
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     print(f"Downloading TAG.jar from {url}")
     try:
@@ -31,8 +31,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--tag",
-        default=DEFAULT_TAG,
-        help=f"PyTAG release tag to download from (default: {DEFAULT_TAG})",
+        default="latest",
+        help="TAG release tag to download from (default: latest)",
     )
     parser.add_argument(
         "--dest",
