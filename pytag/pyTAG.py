@@ -21,10 +21,23 @@ def _get_jvm_path():
             return candidates[0]
     return jpype.getDefaultJVMPath()
 
-def list_supported_games(as_json=False):
-    tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
+def _get_tag_jar_path():
+    """Resolve which TAG.jar to load. Defaults to the one jar_setup.py downloads into
+    pytag/jars/, but set the PYTAG_JAR_PATH environment variable to point at a custom
+    build instead - e.g. one you built locally from a modified TAG checkout via
+    `mvn package` (use target/TAG-pytag.jar, not the full target/TAG.jar)."""
+    custom_jar = os.environ.get("PYTAG_JAR_PATH")
+    tag_jar = custom_jar if custom_jar else os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
     if not os.path.exists(tag_jar):
-        raise FileNotFoundError(f"TAG.jar not found at {tag_jar}. Run jar_setup.py to download it.")
+        source = "PYTAG_JAR_PATH" if custom_jar else "the default location"
+        raise FileNotFoundError(
+            f"TAG.jar not found at {tag_jar} (from {source}). "
+            "Run jar_setup.py to download it, or set PYTAG_JAR_PATH to a custom build."
+        )
+    return tag_jar
+
+def list_supported_games(as_json=False):
+    tag_jar = _get_tag_jar_path()
     jpype.addClassPath(tag_jar)
     if not jpype.isJVMStarted():
         jpype.startJVM(_get_jvm_path(), "--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
@@ -65,7 +78,7 @@ class PyTAG():
         assert game_id in registry, f"Game {game_id} not supported. Supported games are {list(registry.keys())}"
         assert registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
         # start up the JVM
-        tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
+        tag_jar = _get_tag_jar_path()
         jpype.addClassPath(tag_jar)
         if not jpype.isJVMStarted():
             jpype.startJVM(_get_jvm_path(), "--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)

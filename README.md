@@ -33,9 +33,23 @@ PyTAG requires a single `TAG.jar` file placed in the `pytag/jars/` folder. Runni
 ```bash
 python jar_setup.py
 ```
-Or download `TAG.jar` manually from the [PyTAG releases page](https://github.com/martinballa/PyTAG/releases) and place it in `pytag/jars/`.
+Or download `TAG.jar` manually from the [TAG releases page](https://github.com/GAIGResearch/TabletopGames/releases) and place it in `pytag/jars/`.
 
-To build `TAG.jar` from source, see the [TAG wiki](https://tabletopgames.ai/wiki/maven): run `mvn install` in the TAG repository and copy `target/TAG.jar` to `pytag/jars/`.
+To build `TAG.jar` from source, see the [TAG wiki](https://tabletopgames.ai/wiki/maven): run `mvn package` in the TAG repository and copy `target/TAG-pytag.jar` to `pytag/jars/TAG.jar` (the slim PyTAG-specific build - not `target/TAG.jar`, which bundles unrelated ML/analytics dependencies PyTAG doesn't need).
+
+#### Using a custom jar without touching `pytag/jars/`
+
+If you're iterating on a local TAG checkout (e.g. testing a game or agent change before it's released),
+you don't need to copy your build into `pytag/jars/TAG.jar` each time. Point PyTAG at it directly with the
+`PYTAG_JAR_PATH` environment variable:
+
+```bash
+export PYTAG_JAR_PATH=/path/to/TabletopGames/target/TAG-pytag.jar
+python examples/pt-action-masking.py
+```
+
+This takes priority over `pytag/jars/TAG.jar` for both `PyTAG`/`MultiAgentPyTAG`/`SelfPlayPyTAG` and
+`list_supported_games()`. Unset it (or leave it unset) to fall back to the downloaded jar.
 
 ## Supported games
 
