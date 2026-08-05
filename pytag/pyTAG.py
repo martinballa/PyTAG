@@ -21,10 +21,23 @@ def _get_jvm_path():
             return candidates[0]
     return jpype.getDefaultJVMPath()
 
-def list_supported_games(as_json=False):
-    tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
+def _get_tag_jar_path():
+    """Resolve which TAG.jar to load. Defaults to the one jar_setup.py downloads into
+    pytag/jars/, but set the PYTAG_JAR_PATH environment variable to point at a custom
+    build instead - e.g. one you built locally from a modified TAG checkout via
+    `mvn package` (use target/TAG-pytag.jar, not the full target/TAG.jar)."""
+    custom_jar = os.environ.get("PYTAG_JAR_PATH")
+    tag_jar = custom_jar if custom_jar else os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
     if not os.path.exists(tag_jar):
-        raise FileNotFoundError(f"TAG.jar not found at {tag_jar}. Run jar_setup.py to download it.")
+        source = "PYTAG_JAR_PATH" if custom_jar else "the default location"
+        raise FileNotFoundError(
+            f"TAG.jar not found at {tag_jar} (from {source}). "
+            "Run jar_setup.py to download it, or set PYTAG_JAR_PATH to a custom build."
+        )
+    return tag_jar
+
+def list_supported_games(as_json=False):
+    tag_jar = _get_tag_jar_path()
     jpype.addClassPath(tag_jar)
     if not jpype.isJVMStarted():
         jpype.startJVM(_get_jvm_path(), "--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
@@ -52,7 +65,7 @@ class PyTAG():
     This class expects to have a single python agents
     Note that the java jar package is expected to be in the jars folder of the same directory as this file.
     """
-    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector", suppress_java_output:bool=True):
         self.agent_ids = agent_ids
         self.game_id = game_id
         self.seed = seed
@@ -65,10 +78,16 @@ class PyTAG():
         assert game_id in registry, f"Game {game_id} not supported. Supported games are {list(registry.keys())}"
         assert registry[game_id][obs_type] == True, f"Game {game_id} does not support observation type {obs_type}"
         # start up the JVM
-        tag_jar = os.path.join(os.path.dirname(__file__), 'jars', 'TAG.jar')
+        tag_jar = _get_tag_jar_path()
         jpype.addClassPath(tag_jar)
         if not jpype.isJVMStarted():
             jpype.startJVM(_get_jvm_path(), "--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
+
+        if suppress_java_output:
+            null_out = jpype.JClass("java.io.PrintStream")(
+                jpype.JClass("java.io.OutputStream").nullOutputStream()
+            )
+            jpype.JClass("java.lang.System").setOut(null_out)
 
         # access to the java classes
         PyTAGEnv = jpype.JClass("core.PyTAG")
@@ -184,8 +203,8 @@ class SelfPlayPyTAG(PyTAG):
     Only running python agents for training - player IDs are randomised at each episode
     player ids are return in info rather than as a dictionary
     """
-    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
-        super().__init__(["python"]*n_players, game_id, seed, obs_type)
+    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector", suppress_java_output:bool=True):
+        super().__init__(["python"]*n_players, game_id, seed, obs_type, suppress_java_output)
         # the training agent always gets our internal ID representation not the ids coming from the env directly
         self._learner_id = 0
         self.n_players = n_players
@@ -239,8 +258,8 @@ class SelfPlayPyTAG(PyTAG):
 class MultiAgentPyTAG(PyTAG):
     """If there are more than one python agents, the observations are handled as dictionaries with the agent id as key.
     """
-    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
-        super().__init__(agent_ids, game_id, seed, obs_type)
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector", suppress_java_output:bool=True):
+        super().__init__(agent_ids, game_id, seed, obs_type, suppress_java_output)
         self._playerIDs = []
         # collect all the player ids that are python agents
         for i, agent_id in enumerate(agent_ids):
