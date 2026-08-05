@@ -65,7 +65,7 @@ class PyTAG():
     This class expects to have a single python agents
     Note that the java jar package is expected to be in the jars folder of the same directory as this file.
     """
-    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector", suppress_java_output:bool=True):
         self.agent_ids = agent_ids
         self.game_id = game_id
         self.seed = seed
@@ -82,6 +82,12 @@ class PyTAG():
         jpype.addClassPath(tag_jar)
         if not jpype.isJVMStarted():
             jpype.startJVM(_get_jvm_path(), "--add-opens=java.base/java.lang=ALL-UNNAMED", convertStrings=False)
+
+        if suppress_java_output:
+            null_out = jpype.JClass("java.io.PrintStream")(
+                jpype.JClass("java.io.OutputStream").nullOutputStream()
+            )
+            jpype.JClass("java.lang.System").setOut(null_out)
 
         # access to the java classes
         PyTAGEnv = jpype.JClass("core.PyTAG")
@@ -197,8 +203,8 @@ class SelfPlayPyTAG(PyTAG):
     Only running python agents for training - player IDs are randomised at each episode
     player ids are return in info rather than as a dictionary
     """
-    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
-        super().__init__(["python"]*n_players, game_id, seed, obs_type)
+    def __init__(self, n_players: int, game_id: str="Diamant", seed: int=0, obs_type:str="vector", suppress_java_output:bool=True):
+        super().__init__(["python"]*n_players, game_id, seed, obs_type, suppress_java_output)
         # the training agent always gets our internal ID representation not the ids coming from the env directly
         self._learner_id = 0
         self.n_players = n_players
@@ -252,8 +258,8 @@ class SelfPlayPyTAG(PyTAG):
 class MultiAgentPyTAG(PyTAG):
     """If there are more than one python agents, the observations are handled as dictionaries with the agent id as key.
     """
-    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector"):
-        super().__init__(agent_ids, game_id, seed, obs_type)
+    def __init__(self, agent_ids: List[str], game_id: str="Diamant", seed: int=0, obs_type:str="vector", suppress_java_output:bool=True):
+        super().__init__(agent_ids, game_id, seed, obs_type, suppress_java_output)
         self._playerIDs = []
         # collect all the player ids that are python agents
         for i, agent_id in enumerate(agent_ids):
