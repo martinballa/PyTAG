@@ -15,7 +15,7 @@ def _progress(count, block_size, total):
 
 def download(tag: str, dest: str):
     path = "latest/download" if tag == "latest" else f"download/{tag}"
-    url = f"https://github.com/{REPO}/releases/{path}/TAG.jar"
+    url = f"https://github.com/{REPO}/releases/{path}/TAG-pytag.jar"
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     print(f"Downloading TAG.jar from {url}")
     try:
