@@ -165,3 +165,7 @@ pytag/jars/
 
 # VS Code
 .vscode/
+
+# Training run outputs
+wandb/
+*.pt

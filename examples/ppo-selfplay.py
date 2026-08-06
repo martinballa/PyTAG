@@ -164,7 +164,7 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         episodes = 0
         total_steps = 0
         rewards, lengths, outcomes = [], [], []
-        wins, ties, losses = [], [], []
+        wins, ties, losses, scores = [], [], [], []
 
         start_time = time.time()
         next_obs, next_info = envs.reset()
@@ -198,6 +198,7 @@ def evaluate(args, agent, global_step, opponents=["random"]):
                         wins.append(info["episode"]["wins"][i])
                         ties.append(info["episode"]["ties"][i])
                         losses.append(info["episode"]["losses"][i])
+                        scores.append(info["episode"]["score"][i])
 
                         episodes += 1
         writer.add_scalar(f"eval/{opponent}/episodic_wins", np.mean(wins), global_step)
@@ -209,6 +210,7 @@ def evaluate(args, agent, global_step, opponents=["random"]):
         writer.add_scalar(f"eval/{opponent}/outcome", np.mean(outcomes), global_step)
         writer.add_scalar(f"eval/{opponent}/std_return", np.std(rewards), global_step)
         writer.add_scalar(f"eval/{opponent}/std_length", np.std(lengths), global_step)
+        writer.add_scalar(f"eval/{opponent}/mean_score", np.mean(scores), global_step)
         writer.add_scalar(f"eval/{opponent}/SPS", int(total_steps / (time.time() - start_time)), global_step)
 
 def parse_args():
@@ -473,6 +475,7 @@ if __name__ == "__main__":
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"][i], global_step)
                         writer.add_scalar("charts/total_ep_length", info["episode"]["total_l"][i], global_step)
                         writer.add_scalar("charts/episodic_outcomes", info["episode"]["w"][i], global_step) # [-1, 1]
+                        writer.add_scalar("charts/episodic_score", info["episode"]["score"][i], global_step)
 
             # if we have just passed this point then we evaluate
             with torch.no_grad():
@@ -600,6 +603,9 @@ if __name__ == "__main__":
         # reset counters
         step = 0
         steps = torch.zeros(args.num_envs, dtype=torch.int32).to(device)
+
+    # evaluate the final trained policy
+    evaluate(args, agent, global_step, opponents=["random", "osla", "mcts"])
 
     # create checkpoint
     torch.save(agent.state_dict(), f"{results_dir}/agent.pt")

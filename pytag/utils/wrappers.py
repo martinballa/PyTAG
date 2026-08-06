@@ -130,6 +130,7 @@ class RecordEpisodeStatistics(VectorWrapper):
                 "wins":   np.where(outcomes == 1.0,  1.0, 0.0),
                 "losses": np.where(outcomes == -1.0, 1.0, 0.0),
                 "ties":   np.where(outcomes == 0.0,  1.0, 0.0),
+                "score":  np.where(dones, infos["score"], 0.0),
             }
             infos["_episode"] = np.where(dones, True, False)
             self.return_queue.extend(self.episode_returns[dones])
@@ -180,6 +181,7 @@ class RecordSelfPlayEpStats(VectorWrapper):
                 "wins":    np.where(outcomes == 1.0,  1.0, 0.0),
                 "losses":  np.where(outcomes == -1.0, 1.0, 0.0),
                 "ties":    np.where(outcomes == 0.0,  1.0, 0.0),
+                "score":   np.where(dones, infos["score"], 0.0),
             }
             infos["_episode"] = np.where(dones, True, False)
             self.episode_count += num_dones
