@@ -24,7 +24,7 @@ class SelfPlayAssistant():
 
     '''
 
-    def __init__(self, checkpoint_freq=int(5e3), window=10, replace_freq=int(1e3), self_play_prob=0.7, save_checkpoints=False, checkpoint_dir="~/data/PPO-SP/checkpoints/", seed=None):
+    def __init__(self, checkpoint_freq=int(5e3), window=10, replace_freq=int(1e3), self_play_prob=0.7, save_checkpoints=False, checkpoint_dir="~/data/PPO-SP/checkpoints/", seed=None, envs=None, device=None):
         self.checkpoint_freq = checkpoint_freq # how often we want to save a checkpoint
         self.window = window # number of previous checkpoints to store
         self.replace_freq = replace_freq # how often we want to replace the opponent
@@ -33,7 +33,9 @@ class SelfPlayAssistant():
         self.save_steps = deque(maxlen=self.window)
         self.save_checkpoints = save_checkpoints
         self.checkpoint_dir = checkpoint_dir
-        if not seed:
+        self.envs = envs
+        self.device = device
+        if seed is None:
             seed = random.randint(0, 100000)
         self.seed = seed
         self.rnd = random.Random(seed)
@@ -63,7 +65,7 @@ class SelfPlayAssistant():
             checkpoint_id = self.rnd.randint(0, len(self.checkpoints)-1)
         print(f"sampled opponent {checkpoint_id} from timestep {self.save_steps[checkpoint_id]}")
         if self.save_checkpoints:
-            agent = torch.load(self.checkpoints.get(checkpoint_id))
+            agent = torch.load(self.checkpoints[checkpoint_id])
         else:
             agent = self.checkpoints[checkpoint_id]
         return agent
@@ -76,7 +78,7 @@ class SelfPlayAssistant():
         if self.save_checkpoints:
             self.update_pool(agent, step)
         else:
-            agent_copy = PPONet(args, envs).to(device)
+            agent_copy = PPONet(args, self.envs).to(self.device)
             agent_copy.load_state_dict(agent.state_dict())
             self.update_pool(agent_copy, step)
 
@@ -150,7 +152,7 @@ def evaluate(args, agent, global_step, opponents=["random"]):
             obs_type = "json"
         # could add:  randomise_order=True,
         envs = gym.vector.SyncVectorEnv(
-            [make_env(args.env_id, int(global_step / args.seed) + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
+            [make_env(args.env_id, args.seed + i, opponent, args.n_players, framestack=args.framestack, obs_type=obs_type) for i in
              range(args.num_envs)]
         )
         # For environments in which the action-masks align (aka same amount of actions)
@@ -347,7 +349,8 @@ if __name__ == "__main__":
 
     training_manager = SelfPlayAssistant(window=args.sp_window, checkpoint_freq=args.sp_checkpoint_freq,
                                          replace_freq=args.sp_replace_freq, self_play_prob=args.sp_recent_prob,
-                                         save_checkpoints=args.sp_save_checkpoints, seed=args.seed)
+                                         save_checkpoints=args.sp_save_checkpoints, seed=args.seed,
+                                         envs=envs, device=device)
     # add and "sample" the first checkpoint
     training_manager.add_checkpoint(args, agent, 0)
     opponent = training_manager.sample_opponent()
@@ -397,6 +400,7 @@ if __name__ == "__main__":
             logprob = opp_logprob = torch.zeros(0)
             with torch.no_grad():
                 # global step only counts where our training agent is acting
+                prev_global_step = global_step
                 global_step += sum(train_ids).item()
                 (next_obs, opp_obs), (next_mask, opp_mask) = split_obs(next_obs, next_masks, filter=(learning_id == player_id))
                 if len(next_obs) > 0:
@@ -405,10 +409,10 @@ if __name__ == "__main__":
                 if len(opp_obs) > 0:
                     opp_action, opp_logprob, _, opp_value = opponent.get_action_and_value(opp_obs, mask=opp_mask)
 
-                # self-play admin
-                if global_step % training_manager.checkpoint_freq < sum(train_ids):
+                # self-play admin — floor-division detects exactly one crossing per period
+                if global_step // training_manager.checkpoint_freq > prev_global_step // training_manager.checkpoint_freq:
                     training_manager.add_checkpoint(args, agent, global_step)
-                if global_step % training_manager.replace_freq < sum(train_ids):
+                if global_step // training_manager.replace_freq > prev_global_step // training_manager.replace_freq:
                     opponent = training_manager.sample_opponent()
 
                 # modified
@@ -438,10 +442,13 @@ if __name__ == "__main__":
 
             # if we lose during opponent's turn we need to take a step back to allocate the reward correctly
             # note that only the learning player gets reward from the SP env
-            insert_at_indices(rewards, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), reward, sparse=False)
-            insert_at_indices(dones, steps-1, torch.logical_and(done, torch.logical_not(train_ids)).int(), done, sparse=False)
-            # insert_at_indices(rewards, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), reward, sparse=False)
-            # insert_at_indices(dones, steps-1, torch.logical_and(done, (~(train_ids.bool())).int()).int(), done, sparse=False)
+            # guard against steps[i]=0 (game ended before training agent ever acted) to avoid negative index wrap
+            backfill_mask = torch.logical_and(
+                torch.logical_and(done.bool(), torch.logical_not(train_ids.bool())),
+                steps > 0
+            ).int()
+            insert_at_indices(rewards, (steps - 1).clamp(min=0), backfill_mask, reward, sparse=False)
+            insert_at_indices(dones, (steps - 1).clamp(min=0), backfill_mask, done, sparse=False)
 
             next_obs = torch.Tensor(next_obs).to(device)
             if args.framestack > 1:
@@ -493,7 +500,10 @@ if __name__ == "__main__":
         #         (args.num_steps, args.num_envs) + (np.array(envs.single_observation_space.shape).prod(),)).to(device)
         # else:
         n_transitions = torch.sum(steps)
-        b_obs = torch.zeros((n_transitions,) + envs.single_observation_space.shape).to(device)
+        if args.framestack > 1:
+            b_obs = torch.zeros((n_transitions, int(np.array(envs.single_observation_space.shape).prod()))).to(device)
+        else:
+            b_obs = torch.zeros((n_transitions,) + envs.single_observation_space.shape).to(device)
         b_logprobs = torch.zeros((n_transitions)).to(device)
         b_actions = torch.zeros((n_transitions,) + envs.single_action_space.shape).to(device)
         b_masks = torch.zeros((n_transitions, envs.single_action_space.n), dtype=torch.bool).to(device)
@@ -514,7 +524,7 @@ if __name__ == "__main__":
             j += steps[i]
 
         # Optimizing the policy and value network
-        b_inds = np.arange(n_transitions)
+        b_inds = np.arange(int(n_transitions))
         clipfracs = []
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
